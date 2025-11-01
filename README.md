@@ -23,20 +23,44 @@ pip install -r requirements.txt
 
 ### 3. Configure the Bot
 
-Create a `.env` file in the project root (or modify `config.py`):
+**Recommended: Use Environment Variable**
+
+Set the `TELEGRAM_TOKEN` environment variable:
+
+```bash
+export TELEGRAM_TOKEN="your_bot_token_here"
+```
+
+To make it persistent, add it to your shell profile (`~/.zshrc` or `~/.bashrc`):
+
+```bash
+echo 'export TELEGRAM_TOKEN="your_bot_token_here"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**Alternative: Using .env file**
+
+You can also create a `.env` file in the project root (note: you'll need to load it manually or use a package like `python-dotenv`):
 
 ```
-TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_TOKEN=your_bot_token_here
 ```
 
-Or edit `config.py` directly to set your token.
+**Note:** The token is no longer stored in `config.py` for security. Always use environment variables.
 
 ### 4. Run the Bot
 
-Start the bot using polling mode:
+Activate the virtual environment and start the bot using polling mode:
 
 ```bash
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 python bot.py
+```
+
+Or run both commands in one line:
+
+```bash
+source venv/bin/activate && python bot.py
 ```
 
 The bot will start and wait for messages. Send `/start` to your bot in Telegram to begin.

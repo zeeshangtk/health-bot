@@ -8,9 +8,10 @@ from typing import List
 
 
 # Telegram Bot Token
-# TODO: Replace this placeholder with your actual Telegram bot token
+# Load from TELEGRAM_TOKEN environment variable (recommended)
+# Or set directly here if not using environment variables
 # You can get a token from @BotFather on Telegram
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 
 # Patient Names List
@@ -44,19 +45,13 @@ DATABASE_PATH = os.path.join(DATABASE_DIR, DATABASE_FILE)
 def load_env():
     """
     Load configuration from environment variables if present.
-    This function checks for TELEGRAM_TOKEN in environment variables
-    and updates the config if found.
+    Since TELEGRAM_TOKEN is loaded directly from environment at module level,
+    this function primarily serves as a check.
     
     Environment variable:
-        TELEGRAM_TOKEN: The Telegram bot token (optional)
+        TELEGRAM_TOKEN: The Telegram bot token (required)
     
     Returns:
-        bool: True if token was loaded from env, False otherwise
+        bool: True if token is available, False otherwise
     """
-    global TELEGRAM_TOKEN
-    
-    env_token = os.getenv("TELEGRAM_TOKEN")
-    if env_token:
-        TELEGRAM_TOKEN = env_token
-        return True
-    return False
+    return TELEGRAM_TOKEN is not None
