@@ -13,6 +13,7 @@ from handlers.add_patient import get_add_patient_handler
 from handlers.get_patients import get_get_patients_handler  # NEW: Get patients handler
 from handlers.view import get_view_records_conversation_handler
 from handlers.export import get_export_conversation_handler
+from handlers.unknown_command import get_unknown_command_handler, get_help_callback_handler
 
 
 # Configure logging
@@ -122,6 +123,16 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start_handler))
     application.add_handler(get_get_patients_handler())  # NEW: Register get_patients handler
     application.add_handler(CommandHandler("cancel", cancel_handler))
+    
+    # Register callback handler for help buttons (from unknown command handler)
+    # This should be registered before the unknown command handler
+    application.add_handler(get_help_callback_handler())
+    
+    # Register fallback handler for unknown commands/messages
+    # IMPORTANT: This must be registered LAST so it only triggers when no other
+    # handler matches. Handlers are checked in registration order, so any
+    # unrecognized text/command will fall through to this handler.
+    application.add_handler(get_unknown_command_handler())
     
     # Register error handler
     application.add_error_handler(error_handler)
