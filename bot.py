@@ -9,7 +9,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 from config import TELEGRAM_TOKEN, load_env
 from handlers.add_record import get_add_record_conversation_handler
-from handlers.add_patient import get_add_patient_handler  # NEW: Add patient handler
+from handlers.add_patient import get_add_patient_handler
+from handlers.get_patients import get_get_patients_handler  # NEW: Get patients handler
 from handlers.view import get_view_records_conversation_handler
 from handlers.export import get_export_conversation_handler
 
@@ -66,15 +67,21 @@ def main() -> None:
     # Try to load token from environment variable
     load_env()
     
-    if not TELEGRAM_TOKEN:
+    # Validate token exists and is not empty
+    if not TELEGRAM_TOKEN or not TELEGRAM_TOKEN.strip():
         logger.error(
             "TELEGRAM_TOKEN not set! "
             "Please set it in config.py or as TELEGRAM_TOKEN environment variable."
         )
         return
     
-    # Create Application
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    # Create Application with proper token validation
+    try:
+        application = Application.builder().token(TELEGRAM_TOKEN).build()
+    except Exception as e:
+        logger.error(f"Failed to create Application: {e}")
+        logger.error("Please check that your TELEGRAM_TOKEN is valid.")
+        return
     
     # Register conversation handlers (must be registered before command handlers)
     # This ensures they can intercept commands during conversation flow
@@ -85,6 +92,7 @@ def main() -> None:
     
     # Register command handlers
     application.add_handler(CommandHandler("start", start_handler))
+    application.add_handler(get_get_patients_handler())  # NEW: Register get_patients handler
     application.add_handler(CommandHandler("cancel", cancel_handler))
     
     # Start polling
@@ -92,7 +100,23 @@ def main() -> None:
     logger.info("Bot is polling for updates...")
     
     try:
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+            close_loop=False
+        )
+    except RuntimeError as e:
+        error_msg = str(e).lower()
+        if "not properly initialized" in error_msg or "initialize" in error_msg:
+            logger.error(
+                "Bot initialization failed. This usually means:\n"
+                "1. The TELEGRAM_TOKEN is invalid or expired\n"
+                "2. There's a network connectivity issue\n"
+                "3. The token format is incorrect\n\n"
+                "Please verify your token from @BotFather on Telegram."
+            )
+        else:
+            logger.error(f"Runtime error: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"Error while running bot: {e}", exc_info=True)
     finally:

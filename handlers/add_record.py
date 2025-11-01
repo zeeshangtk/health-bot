@@ -28,20 +28,23 @@ async def add_record_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     Entry point for /add_record command.
     Step A: Present patient list as inline buttons.
     """
-    # NEW: Get patients from database instead of static config
+    # Get patients from database instead of static config
     db = get_database()
-    patient_names = db.get_patients()
+    patients = db.get_patients()
     
-    if not patient_names:
+    if not patients:
         await update.message.reply_text(
             "❌ No patients found. Please add a patient first using /add_patient."
         )
         return ConversationHandler.END
     
+    # Extract patient names from dicts
+    patient_names = [patient["name"] for patient in patients]
+    
     # Create inline keyboard with patient options
     keyboard = []
-    for patient in patient_names:
-        keyboard.append([InlineKeyboardButton(patient, callback_data=f"patient_{patient}")])
+    for patient_name in patient_names:
+        keyboard.append([InlineKeyboardButton(patient_name, callback_data=f"patient_{patient_name}")])
     
     keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
     
@@ -72,9 +75,10 @@ async def patient_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if query.data.startswith("patient_"):
         patient_name = query.data.replace("patient_", "")
         
-        # NEW: Validate patient name exists in database
+        # Validate patient name exists in database
         db = get_database()
-        patient_names = db.get_patients()
+        patients = db.get_patients()
+        patient_names = [p["name"] for p in patients]
         if patient_name not in patient_names:
             await query.edit_message_text(
                 "❌ Invalid patient selection. Please try again with /add_record."

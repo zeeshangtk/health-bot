@@ -181,25 +181,37 @@ class Database:
             conn.close()
             return False
     
-    def get_patients(self) -> List[str]:
+    def get_patients(self) -> List[dict]:
         """
         Get all patients from the database, sorted alphabetically.
         
         Returns:
-            List[str]: List of patient names
+            List[dict]: List of patient dictionaries with id, name, and created_at
+            Example:
+            [
+                {"id": 1, "name": "Mom", "created_at": "2025-11-01 10:23:00"},
+                {"id": 2, "name": "Dad", "created_at": "2025-11-01 10:25:00"}
+            ]
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
         cursor.execute("""
-            SELECT name FROM patients
+            SELECT id, name, created_at FROM patients
             ORDER BY name ASC
         """)
         
         rows = cursor.fetchall()
         conn.close()
         
-        return [row[0] for row in rows]
+        return [
+            {
+                "id": row[0],
+                "name": row[1],
+                "created_at": row[2]
+            }
+            for row in rows
+        ]
 
 
 # Global database instance
