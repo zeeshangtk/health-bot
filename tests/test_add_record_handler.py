@@ -28,6 +28,9 @@ def temp_db():
     
     db = Database(db_path=db_path)
     
+    # Create test patient (required for foreign key relationship)
+    db.add_patient(TEST_PATIENT)
+    
     # Patch get_database to return our test database
     with patch('handlers.add_record.get_database', return_value=db):
         yield db

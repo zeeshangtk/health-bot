@@ -47,27 +47,50 @@ async def process_patient_name(update: Update, context: ContextTypes.DEFAULT_TYP
         success = db.add_patient(patient_name)
         
         if success:
-            await update.message.reply_text(
-                f"✅ Patient *{patient_name}* added successfully!",
-                parse_mode="Markdown"
-            )
-            logger.info(
-                f"User {update.effective_user.id} added patient: {patient_name}"
-            )
+            try:
+                await update.message.reply_text(
+                    f"✅ Patient *{patient_name}* added successfully!",
+                    parse_mode="Markdown"
+                )
+                logger.info(
+                    f"User {update.effective_user.id} added patient: {patient_name}"
+                )
+            except Exception as send_error:
+                # Database save succeeded but failed to send reply
+                logger.error(f"Patient saved but failed to send confirmation: {send_error}")
+                # Don't fail the operation - patient was saved successfully
         else:
-            await update.message.reply_text(
-                f"⚠️ Patient *{patient_name}* already exists in the database.",
-                parse_mode="Markdown"
-            )
+            try:
+                await update.message.reply_text(
+                    f"⚠️ Patient *{patient_name}* already exists in the database.",
+                    parse_mode="Markdown"
+                )
+            except Exception as send_error:
+                logger.error(f"Failed to send duplicate warning: {send_error}")
         
         return ConversationHandler.END
         
+    except ValueError as e:
+        # Database constraint error
+        logger.error(f"Database error adding patient: {e}", exc_info=True)
+        try:
+            await update.message.reply_text(
+                f"❌ Database error: {str(e)}\n"
+                "Please try again or use /cancel to exit."
+            )
+        except Exception as send_error:
+            logger.error(f"Failed to send error message: {send_error}")
+        return WAITING_FOR_NAME
     except Exception as e:
+        # Other errors
         logger.error(f"Error adding patient: {e}", exc_info=True)
-        await update.message.reply_text(
-            "❌ Error adding patient. Please try again or contact support.\n"
-            "Use /cancel to exit."
-        )
+        try:
+            await update.message.reply_text(
+                "❌ Error adding patient. Please try again or contact support.\n"
+                "Use /cancel to exit."
+            )
+        except Exception as send_error:
+            logger.error(f"Failed to send error message: {send_error}")
         return WAITING_FOR_NAME
 
 

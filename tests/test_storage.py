@@ -51,6 +51,12 @@ def temp_db():
     os.close(fd)
     
     db = Database(db_path=db_path)
+    
+    # Create test patients (required for foreign key relationship)
+    unique_patients = set(record["patient"] for record in SAMPLE_RECORDS)
+    for patient_name in unique_patients:
+        db.add_patient(patient_name)
+    
     yield db
     
     # Cleanup

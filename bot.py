@@ -59,6 +59,34 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     logger.info(f"User {update.effective_user.id} cancelled operation")
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle errors in the telegram bot.
+    Logs errors and attempts to notify the user if possible.
+    """
+    logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
+    
+    # Try to notify the user if we have an update
+    if isinstance(update, Update) and update.effective_message:
+        try:
+            # Check if it's a network/connection error
+            error_str = str(context.error).lower()
+            if any(keyword in error_str for keyword in ['connection', 'network', 'timeout', 'ssl', 'tls']):
+                error_msg = (
+                    "⚠️ Network error occurred. "
+                    "Please check your internet connection and try again in a moment."
+                )
+            else:
+                error_msg = (
+                    "❌ An error occurred while processing your request. "
+                    "Please try again or contact support if the issue persists."
+                )
+            
+            await update.effective_message.reply_text(error_msg)
+        except Exception as e:
+            logger.error(f"Error sending error message to user: {e}")
+
+
 def main() -> None:
     """
     Main function to start the bot.
@@ -94,6 +122,9 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start_handler))
     application.add_handler(get_get_patients_handler())  # NEW: Register get_patients handler
     application.add_handler(CommandHandler("cancel", cancel_handler))
+    
+    # Register error handler
+    application.add_error_handler(error_handler)
     
     # Start polling
     logger.info("Starting bot...")
