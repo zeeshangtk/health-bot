@@ -47,6 +47,15 @@ class Database:
             )
         """)
         
+        # NEW: Create patients table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS patients (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
         conn.commit()
         conn.close()
     
@@ -144,6 +153,53 @@ class Database:
             ))
         
         return records
+    
+    def add_patient(self, name: str) -> bool:
+        """
+        Add a new patient to the database.
+        
+        Args:
+            name: Full name of the patient
+        
+        Returns:
+            bool: True if patient was added successfully, False if patient already exists
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("""
+                INSERT INTO patients (name)
+                VALUES (?)
+            """, (name,))
+            
+            conn.commit()
+            conn.close()
+            return True
+        except sqlite3.IntegrityError:
+            # Patient name already exists (UNIQUE constraint)
+            conn.close()
+            return False
+    
+    def get_patients(self) -> List[str]:
+        """
+        Get all patients from the database, sorted alphabetically.
+        
+        Returns:
+            List[str]: List of patient names
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT name FROM patients
+            ORDER BY name ASC
+        """)
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [row[0] for row in rows]
 
 
 # Global database instance

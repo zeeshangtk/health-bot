@@ -14,7 +14,7 @@ from telegram.ext import (
     filters
 )
 
-from config import PATIENT_NAMES, SUPPORTED_RECORD_TYPES
+from config import SUPPORTED_RECORD_TYPES
 from storage.database import get_database
 
 logger = logging.getLogger(__name__)
@@ -28,15 +28,19 @@ async def add_record_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     Entry point for /add_record command.
     Step A: Present patient list as inline buttons.
     """
-    if not PATIENT_NAMES:
+    # NEW: Get patients from database instead of static config
+    db = get_database()
+    patient_names = db.get_patients()
+    
+    if not patient_names:
         await update.message.reply_text(
-            "❌ No patients configured. Please add patients to the configuration."
+            "❌ No patients found. Please add a patient first using /add_patient."
         )
         return ConversationHandler.END
     
     # Create inline keyboard with patient options
     keyboard = []
-    for patient in PATIENT_NAMES:
+    for patient in patient_names:
         keyboard.append([InlineKeyboardButton(patient, callback_data=f"patient_{patient}")])
     
     keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
@@ -68,8 +72,10 @@ async def patient_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if query.data.startswith("patient_"):
         patient_name = query.data.replace("patient_", "")
         
-        # Validate patient name
-        if patient_name not in PATIENT_NAMES:
+        # NEW: Validate patient name exists in database
+        db = get_database()
+        patient_names = db.get_patients()
+        if patient_name not in patient_names:
             await query.edit_message_text(
                 "❌ Invalid patient selection. Please try again with /add_record."
             )

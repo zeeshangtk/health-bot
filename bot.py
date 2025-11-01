@@ -9,6 +9,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 from config import TELEGRAM_TOKEN, load_env
 from handlers.add_record import get_add_record_conversation_handler
+from handlers.add_patient import get_add_patient_handler  # NEW: Add patient handler
 from handlers.view import get_view_records_conversation_handler
 from handlers.export import get_export_conversation_handler
 
@@ -78,6 +79,7 @@ def main() -> None:
     # Register conversation handlers (must be registered before command handlers)
     # This ensures they can intercept commands during conversation flow
     application.add_handler(get_add_record_conversation_handler())
+    application.add_handler(get_add_patient_handler())  # NEW: Register add_patient handler
     application.add_handler(get_view_records_conversation_handler())
     application.add_handler(get_export_conversation_handler())
     
