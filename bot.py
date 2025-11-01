@@ -8,6 +8,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 from config import TELEGRAM_TOKEN, load_env
+from handlers.add_record import get_add_record_conversation_handler
 
 
 # Configure logging
@@ -42,6 +43,9 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     Handler for /cancel command.
     Cancels any ongoing operation and returns to main menu.
     """
+    # Clear any stored conversation data
+    context.user_data.clear()
+    
     cancel_message = (
         "Operation cancelled.\n\n"
         "You're back to the main menu. What would you like to do?"
@@ -49,9 +53,6 @@ async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     await update.message.reply_text(cancel_message)
     logger.info(f"User {update.effective_user.id} cancelled operation")
-    
-    # TODO: Clear conversation state here
-    # TODO: Reset to main menu state
 
 
 def main() -> None:
@@ -72,12 +73,13 @@ def main() -> None:
     # Create Application
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
+    # Register conversation handlers (must be registered before command handlers)
+    # This ensures they can intercept commands during conversation flow
+    application.add_handler(get_add_record_conversation_handler())
+    
     # Register command handlers
     application.add_handler(CommandHandler("start", start_handler))
     application.add_handler(CommandHandler("cancel", cancel_handler))
-    
-    # TODO: Add more command handlers here
-    # TODO: Add conversation handlers here
     
     # Start polling
     logger.info("Starting bot...")
