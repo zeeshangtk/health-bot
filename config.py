@@ -1,6 +1,6 @@
 """
 Configuration module for health bot.
-Centralizes token, patient list, storage settings, and supported record types.
+Centralizes token, storage settings, and supported record types.
 """
 
 import os
@@ -12,14 +12,6 @@ from typing import List
 # Or set directly here if not using environment variables
 # You can get a token from @BotFather on Telegram
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-
-
-# Patient Names List
-# Update this list with actual patient names
-PATIENT_NAMES: List[str] = [
-    "Nazra Mastoor",
-    "Asgar Ali Ansari"
-]
 
 
 # Supported Record Types

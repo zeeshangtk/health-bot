@@ -12,7 +12,7 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from config import PATIENT_NAMES, SUPPORTED_RECORD_TYPES
+from config import SUPPORTED_RECORD_TYPES
 from storage.database import get_database
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,10 @@ async def view_records_command(update: Update, context: ContextTypes.DEFAULT_TYP
     Entry point for /view_records command.
     Step 1: Present patient list (including "All" option) as inline buttons.
     """
-    if not PATIENT_NAMES:
+    db = get_database()
+    patients = db.get_patients()
+    
+    if not patients:
         await update.message.reply_text(
             "❌ No patients configured. Please add patients to the configuration."
         )
@@ -35,8 +38,8 @@ async def view_records_command(update: Update, context: ContextTypes.DEFAULT_TYP
     # Create inline keyboard with patient options
     keyboard = []
     keyboard.append([InlineKeyboardButton("📋 All Patients", callback_data="patient_ALL")])
-    for patient in PATIENT_NAMES:
-        keyboard.append([InlineKeyboardButton(patient, callback_data=f"patient_{patient}")])
+    for patient in patients:
+        keyboard.append([InlineKeyboardButton(patient["name"], callback_data=f"patient_{patient['name']}")])
     
     keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
     
@@ -68,11 +71,15 @@ async def patient_selected_for_view(update: Update, context: ContextTypes.DEFAUL
         patient_name = query.data.replace("patient_", "")
         
         # Validate patient name or "ALL"
-        if patient_name != "ALL" and patient_name not in PATIENT_NAMES:
-            await query.edit_message_text(
-                "❌ Invalid patient selection. Please try again with /view_records."
-            )
-            return ConversationHandler.END
+        if patient_name != "ALL":
+            db = get_database()
+            patients = db.get_patients()
+            patient_names = [p["name"] for p in patients]
+            if patient_name not in patient_names:
+                await query.edit_message_text(
+                    "❌ Invalid patient selection. Please try again with /view_records."
+                )
+                return ConversationHandler.END
         
         # Store patient in context
         context.user_data["selected_patient"] = patient_name
