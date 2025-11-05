@@ -135,4 +135,3 @@ python migrate_db.py
 ---
 
 **Restructuring completed successfully!** 🎉
-
