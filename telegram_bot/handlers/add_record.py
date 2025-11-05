@@ -4,7 +4,6 @@ Multi-step flow for recording health measurements.
 """
 import logging
 from datetime import datetime
-from telegram.ext._contexttypes import DEFAULT_TYPE
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     ConversationHandler,
