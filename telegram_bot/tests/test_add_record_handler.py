@@ -1,9 +1,7 @@
 """
 Unit tests for add_record handler flow.
-Tests that the handler correctly saves records to the database.
+Tests that the handler correctly saves records via the Health Service API.
 """
-import os
-import tempfile
 import pytest
 from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch
@@ -11,7 +9,7 @@ from telegram import Update, Message, User, Chat
 from telegram.ext import ContextTypes
 
 from handlers.add_record import value_received, ENTERING_VALUE
-from storage.database import Database, get_database
+from clients.health_api_client import HealthAPIClient
 
 
 # Sample test data
@@ -19,25 +17,20 @@ TEST_PATIENT = "Nazra Mastoor"
 TEST_RECORD_TYPE = "BP"
 TEST_VALUE = "120/80"
 
+TEST_RECORD_RESPONSE = {
+    "timestamp": "2025-01-01T10:00:00",
+    "patient": TEST_PATIENT,
+    "record_type": TEST_RECORD_TYPE,
+    "data_type": "text",
+    "value": TEST_VALUE
+}
+
 
 @pytest.fixture
-def temp_db():
-    """Create a temporary database for testing."""
-    fd, db_path = tempfile.mkstemp(suffix='.db')
-    os.close(fd)
-    
-    db = Database(db_path=db_path)
-    
-    # Create test patient (required for foreign key relationship)
-    db.add_patient(TEST_PATIENT)
-    
-    # Patch get_database to return our test database
-    with patch('handlers.add_record.get_database', return_value=db):
-        yield db
-    
-    # Cleanup
-    if os.path.exists(db_path):
-        os.unlink(db_path)
+def mock_api_client():
+    """Create a mock HealthAPIClient for testing."""
+    client = Mock(spec=HealthAPIClient)
+    return client
 
 
 @pytest.fixture
@@ -73,25 +66,27 @@ def mock_context():
 
 
 @pytest.mark.asyncio
-async def test_value_received_saves_record(temp_db, mock_update, mock_context):
-    """Test that value_received saves a record to the database."""
+async def test_value_received_saves_record(mock_api_client, mock_update, mock_context):
+    """Test that value_received saves a record via the API."""
     # Set up context with patient and record type
     mock_context.user_data["selected_patient"] = TEST_PATIENT
     mock_context.user_data["selected_record_type"] = TEST_RECORD_TYPE
     
-    with patch('handlers.add_record.get_database', return_value=temp_db):
+    # Mock the API client response
+    mock_api_client.save_record = AsyncMock(return_value=TEST_RECORD_RESPONSE)
+    
+    with patch('handlers.add_record.get_health_api_client', return_value=mock_api_client):
         from telegram.ext import ConversationHandler
         result = await value_received(mock_update, mock_context)
     
-    # Verify record was saved
-    records = temp_db.get_records()
-    assert len(records) == 1, "Should have one record saved"
-    
-    record = records[0]
-    assert record.patient == TEST_PATIENT, "Patient should match"
-    assert record.record_type == TEST_RECORD_TYPE, "Record type should match"
-    assert record.value == TEST_VALUE, "Value should match"
-    assert record.data_type == "text", "Data type should be 'text'"
+    # Verify API was called correctly
+    mock_api_client.save_record.assert_called_once()
+    call_kwargs = mock_api_client.save_record.call_args[1]
+    assert call_kwargs["patient"] == TEST_PATIENT
+    assert call_kwargs["record_type"] == TEST_RECORD_TYPE
+    assert call_kwargs["value"] == TEST_VALUE
+    assert call_kwargs["data_type"] == "text"
+    assert isinstance(call_kwargs["timestamp"], datetime)
     
     # Verify conversation ended
     assert result == ConversationHandler.END, "Conversation should end"
@@ -104,18 +99,19 @@ async def test_value_received_saves_record(temp_db, mock_update, mock_context):
 
 
 @pytest.mark.asyncio
-async def test_value_received_with_missing_context(temp_db, mock_update, mock_context):
+async def test_value_received_with_missing_context(mock_api_client, mock_update, mock_context):
     """Test that value_received handles missing patient/record_type gracefully."""
     # Don't set patient or record_type in context
     mock_context.user_data.clear()
     
-    with patch('handlers.add_record.get_database', return_value=temp_db):
+    mock_api_client.save_record = AsyncMock()
+    
+    with patch('handlers.add_record.get_health_api_client', return_value=mock_api_client):
         from telegram.ext import ConversationHandler
         result = await value_received(mock_update, mock_context)
     
-    # Verify no record was saved
-    records = temp_db.get_records()
-    assert len(records) == 0, "Should not save record when context is missing"
+    # Verify API was not called
+    mock_api_client.save_record.assert_not_called()
     
     # Verify error message was sent
     mock_update.message.reply_text.assert_called_once()
@@ -128,7 +124,7 @@ async def test_value_received_with_missing_context(temp_db, mock_update, mock_co
 
 
 @pytest.mark.asyncio
-async def test_value_received_with_empty_value(temp_db, mock_update, mock_context):
+async def test_value_received_with_empty_value(mock_api_client, mock_update, mock_context):
     """Test that value_received handles empty input."""
     # Set up context
     mock_context.user_data["selected_patient"] = TEST_PATIENT
@@ -137,12 +133,13 @@ async def test_value_received_with_empty_value(temp_db, mock_update, mock_contex
     # Set empty value
     mock_update.message.text = "   "  # Whitespace only
     
-    with patch('handlers.add_record.get_database', return_value=temp_db):
+    mock_api_client.save_record = AsyncMock()
+    
+    with patch('handlers.add_record.get_health_api_client', return_value=mock_api_client):
         result = await value_received(mock_update, mock_context)
     
-    # Verify no record was saved
-    records = temp_db.get_records()
-    assert len(records) == 0, "Should not save empty record"
+    # Verify API was not called
+    mock_api_client.save_record.assert_not_called()
     
     # Verify error message was sent
     mock_update.message.reply_text.assert_called_once()
@@ -155,15 +152,18 @@ async def test_value_received_with_empty_value(temp_db, mock_update, mock_contex
 
 
 @pytest.mark.asyncio
-async def test_value_received_saves_multiple_records(temp_db, mock_update, mock_context):
+async def test_value_received_saves_multiple_records(mock_api_client, mock_update, mock_context):
     """Test that handler can save multiple records."""
     # Set up context
     mock_context.user_data["selected_patient"] = TEST_PATIENT
     mock_context.user_data["selected_record_type"] = TEST_RECORD_TYPE
     
     test_values = ["120/80", "130/85", "115/75"]
+    mock_api_client.save_record = AsyncMock(side_effect=[
+        {**TEST_RECORD_RESPONSE, "value": value} for value in test_values
+    ])
     
-    with patch('handlers.add_record.get_database', return_value=temp_db):
+    with patch('handlers.add_record.get_health_api_client', return_value=mock_api_client):
         for value in test_values:
             mock_update.message.text = value
             mock_update.message.reply_text.reset_mock()
@@ -174,17 +174,16 @@ async def test_value_received_saves_multiple_records(temp_db, mock_update, mock_
             mock_context.user_data["selected_patient"] = TEST_PATIENT
             mock_context.user_data["selected_record_type"] = TEST_RECORD_TYPE
     
-    # Verify all records were saved
-    records = temp_db.get_records()
-    assert len(records) == len(test_values), f"Should have {len(test_values)} records"
+    # Verify API was called for each value
+    assert mock_api_client.save_record.call_count == len(test_values)
     
-    # Verify all values match
-    saved_values = [r.value for r in records]
-    assert set(saved_values) == set(test_values), "All values should be saved"
+    # Verify all values were passed correctly
+    call_values = [call[1]["value"] for call in mock_api_client.save_record.call_args_list]
+    assert set(call_values) == set(test_values), "All values should be saved"
 
 
 @pytest.mark.asyncio
-async def test_value_received_record_timestamp(temp_db, mock_update, mock_context):
+async def test_value_received_record_timestamp(mock_api_client, mock_update, mock_context):
     """Test that saved record has correct timestamp."""
     # Set up context
     mock_context.user_data["selected_patient"] = TEST_PATIENT
@@ -192,18 +191,44 @@ async def test_value_received_record_timestamp(temp_db, mock_update, mock_contex
     
     before_save = datetime.now()
     
-    with patch('handlers.add_record.get_database', return_value=temp_db):
+    # Mock API response with current timestamp
+    mock_response = {**TEST_RECORD_RESPONSE}
+    mock_api_client.save_record = AsyncMock(return_value=mock_response)
+    
+    with patch('handlers.add_record.get_health_api_client', return_value=mock_api_client):
         await value_received(mock_update, mock_context)
     
     after_save = datetime.now()
     
-    # Verify record timestamp is within expected range
-    records = temp_db.get_records()
-    assert len(records) == 1, "Should have one record"
-    
-    record_timestamp = records[0].timestamp
-    assert before_save <= record_timestamp <= after_save, \
+    # Verify timestamp was passed correctly to API
+    call_kwargs = mock_api_client.save_record.call_args[1]
+    timestamp = call_kwargs["timestamp"]
+    assert isinstance(timestamp, datetime)
+    assert before_save <= timestamp <= after_save, \
         "Timestamp should be approximately now"
+
+
+@pytest.mark.asyncio
+async def test_value_received_api_connection_error(mock_api_client, mock_update, mock_context):
+    """Test that value_received handles API connection errors gracefully."""
+    # Set up context
+    mock_context.user_data["selected_patient"] = TEST_PATIENT
+    mock_context.user_data["selected_record_type"] = TEST_RECORD_TYPE
+    
+    # Mock connection error
+    mock_api_client.save_record = AsyncMock(side_effect=ConnectionError("Connection failed"))
+    
+    with patch('handlers.add_record.get_health_api_client', return_value=mock_api_client):
+        result = await value_received(mock_update, mock_context)
+    
+    # Verify error message was sent
+    mock_update.message.reply_text.assert_called_once()
+    call_args = mock_update.message.reply_text.call_args
+    assert "❌" in call_args[0][0] or "Error" in call_args[0][0].lower(), \
+        "Should send error message for connection error"
+    
+    # Verify stays in ENTERING_VALUE state (allows retry)
+    assert result == ENTERING_VALUE, "Should stay in ENTERING_VALUE to allow retry"
 
 
 def test_manual_integration_test_instructions():
@@ -212,22 +237,27 @@ def test_manual_integration_test_instructions():
     
     To manually test the add_record flow:
     
-    1. Start the bot:
+    1. Start the Health Service API:
+       cd health_svc
+       python main.py
+    
+    2. Start the bot:
+       cd telegram_bot
        python bot.py
     
-    2. In Telegram:
+    3. In Telegram:
        - Send /start to initialize
        - Send /add_record
        - Select a patient from inline buttons
        - Select a record type from inline buttons
        - Enter a value (e.g., "120/80" for BP)
     
-    3. Verify in database:
-       - Check data/health_bot.db
+    4. Verify via API:
+       - curl http://localhost:8000/api/v1/records
        - Or use /view_records to see the saved entry
     
     Expected behavior:
-       - Record is saved with correct patient, type, and value
+       - Record is saved via API with correct patient, type, and value
        - Confirmation message shows all record details
        - Record appears in /view_records output
     """

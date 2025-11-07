@@ -7,8 +7,12 @@ from datetime import datetime
 from typing import Optional, List
 from pathlib import Path
 
-from config import DATABASE_DIR, DATABASE_PATH
 from storage.models import HealthRecord
+
+# Database configuration (temporary - will be moved to health_svc)
+DATABASE_DIR = os.getenv("DATABASE_DIR", "data")
+DATABASE_FILE = os.getenv("DATABASE_FILE", "health_bot.db")
+DATABASE_PATH = os.path.join(DATABASE_DIR, DATABASE_FILE)
 
 
 class Database:
