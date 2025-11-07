@@ -11,8 +11,11 @@ from api.routes import router
 # Create FastAPI app
 app = FastAPI(
     title="Health Service API",
-    description="REST API for health record management",
-    version="1.0.0"
+    description="REST API for health record management. Track and manage patient health records including blood pressure, weight, temperature, and other measurements.",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url=None,
+    openapi_url=None
 )
 
 # Configure CORS to allow telegram_bot to call API

@@ -146,8 +146,9 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 The API will be available at:
 - **API Base URL**: `http://localhost:8000`
-- **API Docs**: `http://localhost:8000/docs` (Swagger UI)
-- **Alternative Docs**: `http://localhost:8000/redoc` (ReDoc)
+- **Swagger UI (Interactive Docs)**: [http://localhost:8000/docs](http://localhost:8000/docs) - Click-to-test interface
+
+**💡 Tip:** Use the Swagger UI at `/docs` to interactively test all API endpoints directly from your browser!
 
 ### Start Telegram Bot
 
@@ -216,13 +217,35 @@ Environment variables (with defaults):
 
 The Health Service API provides the following endpoints:
 
-- `GET /` - API information
-- `POST /api/v1/patients` - Create a new patient
-- `GET /api/v1/patients` - Get all patients
-- `POST /api/v1/records` - Create a new health record
-- `GET /api/v1/records` - Get health records (with optional filters)
+### Health Check
+- `GET /` - API information and version
 
-See `http://localhost:8000/docs` for full API documentation when the service is running.
+### Patient Management
+- `POST /api/v1/patients` - Create a new patient
+  - Request: `{"name": "John Doe"}`
+  - Returns: Patient object with ID and timestamp
+  - Status: 201 Created (409 Conflict if patient exists)
+- `GET /api/v1/patients` - Get all patients (sorted alphabetically)
+
+### Health Records
+- `POST /api/v1/records` - Create a new health record
+  - Request: `{"timestamp": "2025-01-01T10:00:00", "patient": "John Doe", "record_type": "BP", "data_type": "text", "value": "120/80"}`
+  - Returns: Created health record
+  - Status: 201 Created (400 Bad Request if validation fails)
+- `GET /api/v1/records` - Get health records with optional filters
+  - Query params: `patient` (filter by name), `record_type` (filter by type), `limit` (max results, 1-1000)
+
+### 📖 Interactive API Documentation
+
+**Full interactive documentation is available when the service is running:**
+
+- **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
+  - Browse all endpoints organized by tags
+  - Test endpoints directly with "Try it out" feature
+  - View request/response schemas with examples
+  - Validate requests before sending
+
+For detailed API documentation and examples, see [`health_svc/README.md`](health_svc/README.md).
 
 ## 🧩 Telegram Bot Commands
 
