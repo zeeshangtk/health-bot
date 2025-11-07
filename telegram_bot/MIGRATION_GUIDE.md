@@ -27,6 +27,9 @@ For production databases, we recommend running the migration manually first to:
 ### Step 1: Check Migration Status
 
 ```bash
+# Navigate to health_svc directory
+cd ../health_svc
+
 # Check if migration is needed
 python migrate_db.py --status
 
@@ -44,6 +47,9 @@ This will show:
 **Always backup your production database before migration:**
 
 ```bash
+# Navigate to health_svc directory
+cd ../health_svc
+
 # Create backup and show status
 python migrate_db.py --backup --status
 
@@ -60,6 +66,8 @@ cp data/health_bot.db data/health_bot.db.backup_$(date +%Y%m%d_%H%M%S)
 Test the migration without making changes:
 
 ```bash
+# Navigate to health_svc directory
+cd ../health_svc
 python migrate_db.py --dry-run
 ```
 
@@ -68,6 +76,9 @@ This shows what would be migrated without actually changing the database.
 ### Step 4: Run Migration
 
 ```bash
+# Navigate to health_svc directory
+cd ../health_svc
+
 # Run migration with backup
 python migrate_db.py --backup
 
@@ -80,6 +91,7 @@ python migrate_db.py
 Check that migration completed successfully:
 
 ```bash
+cd ../health_svc
 python migrate_db.py --status
 ```
 
@@ -104,7 +116,7 @@ The migration:
 
 This shouldn't happen if migration ran successfully. If you see this:
 1. Check that the patients table has entries: `sqlite3 data/health_bot.db "SELECT * FROM patients;"`
-2. Verify migration completed: `python migrate_db.py --status`
+2. Verify migration completed: `cd ../health_svc && python migrate_db.py --status`
 3. If needed, restore from backup and re-run migration
 
 ### Database Locked Error
@@ -129,6 +141,7 @@ cp data/health_bot.db.backup_TIMESTAMP data/health_bot.db
 ## Migration Script Options
 
 ```bash
+cd ../health_svc
 python migrate_db.py [OPTIONS]
 
 Options:
@@ -142,6 +155,9 @@ Options:
 ## Example Workflow
 
 ```bash
+# Navigate to health_svc directory
+cd ../health_svc
+
 # 1. Check status
 python migrate_db.py --status
 
@@ -154,18 +170,21 @@ python migrate_db.py --backup
 # 4. Verify completion
 python migrate_db.py --status
 
-# 5. Start bot (migration won't run again)
+# 5. Navigate back to telegram_bot and start bot (migration won't run again)
+cd ../telegram_bot
 python bot.py
 ```
 
 ## Production Deployment Checklist
 
 - [ ] Stop the bot
+- [ ] Navigate to health_svc: `cd ../health_svc`
 - [ ] Check migration status: `python migrate_db.py --status`
 - [ ] Create manual backup: `cp data/health_bot.db data/health_bot.db.backup_$(date +%Y%m%d_%H%M%S)`
 - [ ] Run dry run: `python migrate_db.py --dry-run`
 - [ ] Run migration: `python migrate_db.py --backup`
 - [ ] Verify status: `python migrate_db.py --status`
+- [ ] Navigate back to telegram_bot: `cd ../telegram_bot`
 - [ ] Test bot functionality
 - [ ] Start bot: `python bot.py`
 

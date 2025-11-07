@@ -83,10 +83,7 @@ health-bot/                    # Repository root (monorepo)
     ├── config.py              # Configuration (token, settings)
     ├── requirements.txt       # Python dependencies
     ├── pytest.ini            # Pytest configuration
-    ├── migrate_db.py         # Database migration script
     ├── README.md             # This file
-    ├── data/                 # Database storage
-    │   └── health_bot.db
     ├── handlers/             # Command and message handlers
     │   ├── __init__.py
     │   ├── start.py          # /start command
@@ -96,13 +93,12 @@ health-bot/                    # Repository root (monorepo)
     │   ├── view.py           # View records
     │   ├── export.py         # Export records
     │   └── unknown_command.py # Unknown command handler
-    ├── storage/              # Data storage layer
+    ├── clients/              # API clients
     │   ├── __init__.py
-    │   ├── database.py       # SQLite storage implementation
-    │   └── models.py         # Data models
+    │   └── health_api_client.py # Health service API client
     ├── tests/                # Unit tests
     │   ├── __init__.py
-    │   ├── test_storage.py
+    │   ├── test_health_api_client.py
     │   └── test_add_record_handler.py
     └── utils/                # Utility functions
         └── __init__.py
