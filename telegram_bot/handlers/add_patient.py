@@ -6,7 +6,7 @@ import logging
 from telegram import Update
 from telegram.ext import CommandHandler, MessageHandler, ContextTypes, filters, ConversationHandler
 
-from storage.database import get_database
+from clients.health_api_client import get_health_api_client
 
 logger = logging.getLogger(__name__)
 
@@ -43,54 +43,48 @@ async def process_patient_name(update: Update, context: ContextTypes.DEFAULT_TYP
         return WAITING_FOR_NAME
     
     try:
-        db = get_database()
-        success = db.add_patient(patient_name)
+        client = get_health_api_client()
+        result = await client.add_patient(patient_name)
         
-        if success:
-            try:
-                await update.message.reply_text(
-                    f"✅ Patient *{patient_name}* added successfully!",
-                    parse_mode="Markdown"
-                )
-                logger.info(
-                    f"User {update.effective_user.id} added patient: {patient_name}"
-                )
-            except Exception as send_error:
-                # Database save succeeded but failed to send reply
-                logger.error(f"Patient saved but failed to send confirmation: {send_error}")
-                # Don't fail the operation - patient was saved successfully
-        else:
-            try:
-                await update.message.reply_text(
-                    f"⚠️ Patient *{patient_name}* already exists in the database.",
-                    parse_mode="Markdown"
-                )
-            except Exception as send_error:
-                logger.error(f"Failed to send duplicate warning: {send_error}")
+        # If we get here, patient was added successfully
+        await update.message.reply_text(
+            f"✅ Patient *{patient_name}* added successfully!",
+            parse_mode="Markdown"
+        )
+        logger.info(
+            f"User {update.effective_user.id} added patient: {patient_name}"
+        )
         
         return ConversationHandler.END
         
     except ValueError as e:
-        # Database constraint error
-        logger.error(f"Database error adding patient: {e}", exc_info=True)
-        try:
+        # Patient already exists or API error
+        error_msg = str(e)
+        if "already exists" in error_msg.lower() or "409" in error_msg:
             await update.message.reply_text(
-                f"❌ Database error: {str(e)}\n"
+                f"⚠️ Patient *{patient_name}* already exists.",
+                parse_mode="Markdown"
+            )
+        else:
+            logger.error(f"API error adding patient: {e}", exc_info=True)
+            await update.message.reply_text(
+                f"❌ Error: {error_msg}\n"
                 "Please try again or use /cancel to exit."
             )
-        except Exception as send_error:
-            logger.error(f"Failed to send error message: {send_error}")
+        return WAITING_FOR_NAME
+    except ConnectionError as e:
+        logger.error(f"Connection error adding patient: {e}", exc_info=True)
+        await update.message.reply_text(
+            "❌ Error connecting to health service. Please try again later."
+        )
         return WAITING_FOR_NAME
     except Exception as e:
         # Other errors
-        logger.error(f"Error adding patient: {e}", exc_info=True)
-        try:
-            await update.message.reply_text(
-                "❌ Error adding patient. Please try again or contact support.\n"
-                "Use /cancel to exit."
-            )
-        except Exception as send_error:
-            logger.error(f"Failed to send error message: {send_error}")
+        logger.error(f"Unexpected error adding patient: {e}", exc_info=True)
+        await update.message.reply_text(
+            "❌ Error adding patient. Please try again or contact support.\n"
+            "Use /cancel to exit."
+        )
         return WAITING_FOR_NAME
 
 

@@ -13,7 +13,7 @@ from telegram.ext import (
 )
 
 from config import SUPPORTED_RECORD_TYPES
-from storage.database import get_database
+from clients.health_api_client import get_health_api_client
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +26,16 @@ async def view_records_command(update: Update, context: ContextTypes.DEFAULT_TYP
     Entry point for /view_records command.
     Step 1: Present patient list (including "All" option) as inline buttons.
     """
-    db = get_database()
-    patients = db.get_patients()
+    client = get_health_api_client()
+    
+    try:
+        patients = await client.get_patients()
+    except ConnectionError as e:
+        logger.error(f"Connection error: {e}")
+        await update.message.reply_text(
+            "❌ Error connecting to health service. Please try again later."
+        )
+        return ConversationHandler.END
     
     if not patients:
         await update.message.reply_text(
@@ -72,12 +80,19 @@ async def patient_selected_for_view(update: Update, context: ContextTypes.DEFAUL
         
         # Validate patient name or "ALL"
         if patient_name != "ALL":
-            db = get_database()
-            patients = db.get_patients()
-            patient_names = [p["name"] for p in patients]
-            if patient_name not in patient_names:
+            client = get_health_api_client()
+            try:
+                patients = await client.get_patients()
+                patient_names = [p["name"] for p in patients]
+                if patient_name not in patient_names:
+                    await query.edit_message_text(
+                        "❌ Invalid patient selection. Please try again with /view_records."
+                    )
+                    return ConversationHandler.END
+            except ConnectionError as e:
+                logger.error(f"Connection error: {e}")
                 await query.edit_message_text(
-                    "❌ Invalid patient selection. Please try again with /view_records."
+                    "❌ Error connecting to health service. Please try again later."
                 )
                 return ConversationHandler.END
         
@@ -145,14 +160,14 @@ async def record_type_selected_for_view(update: Update, context: ContextTypes.DE
             return ConversationHandler.END
         
         try:
-            # Fetch records from database
-            db = get_database()
+            # Fetch records from API
+            client = get_health_api_client()
             
-            # Convert "ALL" to None for database query
+            # Convert "ALL" to None for API query
             patient_filter = None if patient_name == "ALL" else patient_name
             type_filter = None if record_type == "ALL" else record_type
             
-            records = db.get_records(
+            records = await client.get_records(
                 patient=patient_filter,
                 record_type=type_filter,
                 limit=5
@@ -183,12 +198,13 @@ async def record_type_selected_for_view(update: Update, context: ContextTypes.DE
                 ]
                 
                 for i, record in enumerate(records, 1):
-                    timestamp_str = record.timestamp.strftime("%Y-%m-%d %H:%M")
+                    # Parse timestamp from ISO string
+                    timestamp_str = datetime.fromisoformat(record["timestamp"]).strftime("%Y-%m-%d %H:%M")
                     text_lines.append(
                         f"**{i}.** {timestamp_str}\n"
-                        f"   👤 {record.patient}\n"
-                        f"   📋 {record.record_type}\n"
-                        f"   💾 {record.value}\n"
+                        f"   👤 {record['patient']}\n"
+                        f"   📋 {record['record_type']}\n"
+                        f"   💾 {record['value']}\n"
                     )
                 
                 await query.edit_message_text(
@@ -206,6 +222,13 @@ async def record_type_selected_for_view(update: Update, context: ContextTypes.DE
             
             return ConversationHandler.END
             
+        except ConnectionError as e:
+            logger.error(f"Connection error fetching records: {e}", exc_info=True)
+            await query.edit_message_text(
+                "❌ Error connecting to health service. Please try again later."
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
         except Exception as e:
             logger.error(f"Error fetching records: {e}", exc_info=True)
             await query.edit_message_text(

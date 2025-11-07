@@ -15,7 +15,7 @@ from telegram.ext import (
 )
 
 from config import SUPPORTED_RECORD_TYPES
-from storage.database import get_database
+from clients.health_api_client import get_health_api_client
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +28,17 @@ async def add_record_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     Entry point for /add_record command.
     Step A: Present patient list as inline buttons.
     """
-    # Get patients from database instead of static config
-    db = get_database()
-    patients = db.get_patients()
+    # Get patients from API
+    client = get_health_api_client()
+    
+    try:
+        patients = await client.get_patients()
+    except (ValueError, ConnectionError) as e:
+        logger.error(f"Error fetching patients: {e}")
+        await update.message.reply_text(
+            "❌ Error connecting to health service. Please try again later."
+        )
+        return ConversationHandler.END
     
     if not patients:
         await update.message.reply_text(
@@ -75,13 +83,20 @@ async def patient_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if query.data.startswith("patient_"):
         patient_name = query.data.replace("patient_", "")
         
-        # Validate patient name exists in database
-        db = get_database()
-        patients = db.get_patients()
-        patient_names = [p["name"] for p in patients]
-        if patient_name not in patient_names:
+        # Validate patient name exists in API
+        client = get_health_api_client()
+        try:
+            patients = await client.get_patients()
+            patient_names = [p["name"] for p in patients]
+            if patient_name not in patient_names:
+                await query.edit_message_text(
+                    "❌ Invalid patient selection. Please try again with /add_record."
+                )
+                return ConversationHandler.END
+        except (ValueError, ConnectionError) as e:
+            logger.error(f"Error fetching patients: {e}")
             await query.edit_message_text(
-                "❌ Invalid patient selection. Please try again with /add_record."
+                "❌ Error connecting to health service. Please try again later."
             )
             return ConversationHandler.END
         
@@ -188,11 +203,11 @@ async def value_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
     
     try:
-        # Save record to database
+        # Save record via API
         timestamp = datetime.now()
-        db = get_database()
+        client = get_health_api_client()
         
-        record_id = db.save_record(
+        result = await client.save_record(
             timestamp=timestamp,
             patient=patient_name,
             record_type=record_type,
@@ -200,18 +215,17 @@ async def value_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             value=value_text
         )
         
-        # Format timestamp for display
-        timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        # Parse timestamp from API response (ISO format string)
+        timestamp_str = datetime.fromisoformat(result["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
         
         # Send confirmation message
         confirmation_message = (
             "✅ **Record Saved Successfully!**\n\n"
             f"📅 Timestamp: {timestamp_str}\n"
-            f"👤 Patient: {patient_name}\n"
-            f"📋 Record Type: {record_type}\n"
-            f"📝 Data Type: text\n"
-            f"💾 Value: {value_text}\n"
-            f"🆔 Record ID: {record_id}"
+            f"👤 Patient: {result['patient']}\n"
+            f"📋 Record Type: {result['record_type']}\n"
+            f"📝 Data Type: {result['data_type']}\n"
+            f"💾 Value: {result['value']}"
         )
         
         await update.message.reply_text(
@@ -229,8 +243,15 @@ async def value_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         return ConversationHandler.END
         
-    except Exception as e:
+    except (ValueError, ConnectionError) as e:
         logger.error(f"Error saving record: {e}", exc_info=True)
+        await update.message.reply_text(
+            "❌ Error saving record. Please try again or contact support.\n"
+            "Use /cancel to exit."
+        )
+        return ENTERING_VALUE
+    except Exception as e:
+        logger.error(f"Unexpected error saving record: {e}", exc_info=True)
         await update.message.reply_text(
             "❌ Error saving record. Please try again or contact support.\n"
             "Use /cancel to exit."

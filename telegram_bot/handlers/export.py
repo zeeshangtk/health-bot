@@ -18,7 +18,7 @@ from telegram.ext import (
 )
 
 from config import SUPPORTED_RECORD_TYPES
-from storage.database import get_database
+from clients.health_api_client import get_health_api_client
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +31,16 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     Entry point for /export command.
     Step 1: Present patient list (including "All" option) as inline buttons.
     """
-    db = get_database()
-    patients = db.get_patients()
+    client = get_health_api_client()
+    
+    try:
+        patients = await client.get_patients()
+    except ConnectionError as e:
+        logger.error(f"Connection error: {e}")
+        await update.message.reply_text(
+            "❌ Error connecting to health service. Please try again later."
+        )
+        return ConversationHandler.END
     
     if not patients:
         await update.message.reply_text(
@@ -77,12 +85,19 @@ async def patient_selected_for_export(update: Update, context: ContextTypes.DEFA
         
         # Validate patient name or "ALL"
         if patient_name != "ALL":
-            db = get_database()
-            patients = db.get_patients()
-            patient_names = [p["name"] for p in patients]
-            if patient_name not in patient_names:
+            client = get_health_api_client()
+            try:
+                patients = await client.get_patients()
+                patient_names = [p["name"] for p in patients]
+                if patient_name not in patient_names:
+                    await query.edit_message_text(
+                        "❌ Invalid patient selection. Please try again with /export."
+                    )
+                    return ConversationHandler.END
+            except ConnectionError as e:
+                logger.error(f"Connection error: {e}")
                 await query.edit_message_text(
-                    "❌ Invalid patient selection. Please try again with /export."
+                    "❌ Error connecting to health service. Please try again later."
                 )
                 return ConversationHandler.END
         
@@ -119,7 +134,7 @@ def _create_csv_file(records, file_path: Path) -> None:
     Create a CSV file from records.
     
     Args:
-        records: List of HealthRecord objects
+        records: List of record dicts from API
         file_path: Path where CSV file should be created
     """
     with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
@@ -129,11 +144,11 @@ def _create_csv_file(records, file_path: Path) -> None:
         writer.writeheader()
         for record in records:
             writer.writerow({
-                'timestamp': record.timestamp.isoformat(),
-                'patient': record.patient,
-                'record_type': record.record_type,
-                'data_type': record.data_type,
-                'value': record.value
+                'timestamp': record['timestamp'],
+                'patient': record['patient'],
+                'record_type': record['record_type'],
+                'data_type': record['data_type'],
+                'value': record['value']
             })
 
 
@@ -142,17 +157,17 @@ def _create_json_file(records, file_path: Path) -> None:
     Create a JSON file from records.
     
     Args:
-        records: List of HealthRecord objects
+        records: List of record dicts from API
         file_path: Path where JSON file should be created
     """
     records_data = []
     for record in records:
         records_data.append({
-            'timestamp': record.timestamp.isoformat(),
-            'patient': record.patient,
-            'record_type': record.record_type,
-            'data_type': record.data_type,
-            'value': record.value
+            'timestamp': record['timestamp'],
+            'patient': record['patient'],
+            'record_type': record['record_type'],
+            'data_type': record['data_type'],
+            'value': record['value']
         })
     
     with open(file_path, 'w', encoding='utf-8') as jsonfile:
@@ -196,13 +211,13 @@ async def format_selected_for_export(update: Update, context: ContextTypes.DEFAU
         temp_file = None
         
         try:
-            # Fetch records from database
-            db = get_database()
+            # Fetch records from API
+            client = get_health_api_client()
             
-            # Convert "ALL" to None for database query
+            # Convert "ALL" to None for API query
             patient_filter = None if patient_name == "ALL" else patient_name
             
-            records = db.get_records(patient=patient_filter)
+            records = await client.get_records(patient=patient_filter)
             
             if not records:
                 patient_display = "All Patients" if patient_name == "ALL" else patient_name
@@ -270,6 +285,13 @@ async def format_selected_for_export(update: Update, context: ContextTypes.DEFAU
             
             return ConversationHandler.END
             
+        except ConnectionError as e:
+            logger.error(f"Connection error exporting records: {e}", exc_info=True)
+            await query.edit_message_text(
+                "❌ Error connecting to health service. Please try again later."
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
         except Exception as e:
             logger.error(f"Error exporting records: {e}", exc_info=True)
             await query.edit_message_text(

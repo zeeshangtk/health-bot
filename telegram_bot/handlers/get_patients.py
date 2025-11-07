@@ -6,7 +6,7 @@ import logging
 from telegram import Update
 from telegram.ext import CommandHandler, ContextTypes
 
-from storage.database import get_database
+from clients.health_api_client import get_health_api_client
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +14,18 @@ logger = logging.getLogger(__name__)
 async def get_patients_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handler for /get_patients command.
-    Displays all registered patients from the database.
+    Displays all registered patients from the API.
     """
-    db = get_database()
-    patients = db.get_patients()
+    client = get_health_api_client()
+    
+    try:
+        patients = await client.get_patients()
+    except ConnectionError as e:
+        logger.error(f"Connection error: {e}")
+        await update.message.reply_text(
+            "❌ Error connecting to health service. Please try again later."
+        )
+        return
     
     if not patients:
         await update.message.reply_text("⚠️ No patients found.")
