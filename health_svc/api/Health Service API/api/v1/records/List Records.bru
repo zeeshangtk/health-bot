@@ -1,0 +1,17 @@
+meta {
+  name: List Records
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{healthSvcBaseUrl}}/api/v1/records?patient=Test Patient&record_type=Sugar&limit=5
+  body: none
+  auth: inherit
+}
+
+params:query {
+  patient: Test Patient
+  record_type: Sugar
+  limit: 5
+}

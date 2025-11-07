@@ -1,0 +1,11 @@
+meta {
+  name: List Patients
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{healthSvcBaseUrl}}/api/v1/patients
+  body: none
+  auth: inherit
+}

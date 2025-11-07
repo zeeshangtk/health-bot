@@ -1,0 +1,17 @@
+meta {
+  name: Create Patient
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{healthSvcBaseUrl}}/api/v1/patients
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "name": "Nazra Mastoor"
+  }
+}
