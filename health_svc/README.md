@@ -57,20 +57,35 @@ For full functionality including background processing of uploaded files:
    
    # Or install and run locally
    redis-server
+   
+   # Verify Redis is running
+   redis-cli ping
+   # Should return: PONG
    ```
 
 2. **Start Celery Worker** (processes background tasks):
    ```bash
    # From the health_svc directory
+   # Set PYTHONPATH to ensure proper module imports
+   PYTHONPATH=/path/to/health_svc celery -A celery_app worker --loglevel=info
+   
+   # Or if running from health_svc directory:
    celery -A celery_app worker --loglevel=info
    ```
+   
+   **Important**: The worker must be running for tasks to be processed. If tasks are queued but not processing, check that a worker is running.
 
 3. **Start Flower** (optional, for monitoring):
    ```bash
    # From the health_svc directory
+   # Set PYTHONPATH to ensure proper module imports
+   PYTHONPATH=/path/to/health_svc celery -A celery_app flower --port=5555
+   
+   # Or if running from health_svc directory:
    celery -A celery_app flower --port=5555
    ```
-   Then access Flower UI at: http://localhost:5555
+   
+   Then access Flower UI at: **http://localhost:5555**
 
 4. **Start FastAPI Server**:
    ```bash
@@ -80,6 +95,27 @@ For full functionality including background processing of uploaded files:
    ```
 
 **Note**: The API will work without Redis/Celery, but background processing tasks will not be queued. File uploads will still succeed, but the `task_id` in the response will be `null`.
+
+**Running All Services in Separate Terminals**:
+
+For development, you'll typically need 4 terminal windows:
+
+```bash
+# Terminal 1: Redis (if not using Docker)
+redis-server
+
+# Terminal 2: Celery Worker
+cd health_svc
+celery -A celery_app worker --loglevel=info
+
+# Terminal 3: Flower (optional)
+cd health_svc
+celery -A celery_app flower --port=5555
+
+# Terminal 4: FastAPI Server
+cd health_svc
+python main.py
+```
 
 ## 📚 Interactive API Documentation
 
@@ -305,9 +341,16 @@ The project follows Python best practices:
 4. Add tests in `tests/test_api.py`
 5. Test in Swagger UI at `/docs`
 
-## 🔄 Background Processing
+## 🔄 Background Processing with Celery
 
 The service uses Celery for asynchronous background processing of uploaded files. After a file is successfully saved to disk, a background task is queued for post-processing.
+
+### Understanding Celery Architecture
+
+- **Redis**: Message broker that stores task queues
+- **Celery Worker**: Processes tasks from the queue
+- **Flower**: Web-based monitoring tool for Celery
+- **Tasks**: Background jobs (e.g., `process_uploaded_file`)
 
 ### Task Processing
 
@@ -317,25 +360,178 @@ The `process_uploaded_file` task performs:
 - Logging of upload events
 - Error handling with automatic retries (up to 3 attempts with exponential backoff)
 
-### Monitoring Tasks
+### Starting Celery Worker
 
-Use Flower to monitor task execution:
-- Access Flower UI at http://localhost:5555 (when running)
-- View task status, execution time, and results
-- Monitor worker health and task queues
-- Debug failed tasks and retries
+```bash
+# Basic worker
+celery -A celery_app worker --loglevel=info
 
-### Task Status
+# Worker with concurrency (multiple processes)
+celery -A celery_app worker --loglevel=info --concurrency=4
 
-You can check task status using the task_id returned in the upload response:
+# Worker with specific queue
+celery -A celery_app worker --loglevel=info --queues=default
+
+# Worker in the background (using screen/tmux)
+screen -S celery-worker
+celery -A celery_app worker --loglevel=info
+# Press Ctrl+A then D to detach
+```
+
+### Monitoring with Flower
+
+Flower provides a web-based interface for monitoring Celery tasks and workers.
+
+#### Starting Flower
+
+```bash
+# Basic Flower (default port 5555)
+celery -A celery_app flower --port=5555
+
+# Flower with authentication
+celery -A celery_app flower --port=5555 --basic_auth=admin:password
+
+# Flower with broker URL override
+celery -A celery_app flower --port=5555 --broker=redis://localhost:6379/0
+```
+
+#### Accessing Flower UI
+
+Once Flower is running, open your browser to:
+- **URL**: http://localhost:5555
+- **Workers Tab**: View active workers and their status
+- **Tasks Tab**: See task history, active tasks, and scheduled tasks
+- **Monitor Tab**: Real-time task execution monitoring
+- **Task Details**: Click on any task to see execution details, arguments, and results
+
+#### Flower Features
+
+- **Real-time Updates**: Live monitoring of task execution
+- **Task History**: View all completed, failed, and pending tasks
+- **Worker Management**: Monitor worker health, resource usage, and performance
+- **Task Inspection**: View task arguments, results, tracebacks, and retry information
+- **Statistics**: Task execution times, success rates, and throughput metrics
+
+### Troubleshooting Celery and Flower
+
+#### Issue: Tasks Queued but Not Processing
+
+**Symptoms**: Tasks appear in Redis queue (`LRANGE celery 0 -1` shows tasks), but Flower shows "No data available in table"
+
+**Solution**: Start a Celery worker
+```bash
+# Check if worker is running
+ps aux | grep "celery.*worker"
+
+# Start worker if not running
+celery -A celery_app worker --loglevel=info
+```
+
+#### Issue: Flower Shows "No Workers"
+
+**Symptoms**: Flower UI loads but shows no workers
+
+**Solution**: 
+1. Ensure a Celery worker is running
+2. Verify Redis connection (both worker and Flower use the same Redis instance)
+3. Check that worker and Flower are using the same broker URL
+
+#### Issue: Module Import Errors
+
+**Symptoms**: Worker fails to start with `ModuleNotFoundError`
+
+**Solution**: Set PYTHONPATH when starting worker/flower
+```bash
+PYTHONPATH=/path/to/health_svc celery -A celery_app worker --loglevel=info
+```
+
+#### Issue: Tasks Stuck in PENDING State
+
+**Possible Causes**:
+- No worker running to process tasks
+- Worker crashed or stopped
+- Redis connection issues
+- Task serialization errors
+
+**Debug Steps**:
+1. Check worker logs for errors
+2. Verify Redis is accessible: `redis-cli ping`
+3. Check task in Flower UI for error details
+4. Restart worker if needed
+
+### Checking Task Status Programmatically
+
+You can check task status using the `task_id` returned in the upload response:
+
 ```python
 from celery_app import celery_app
 
 # Get task result
 task = celery_app.AsyncResult(task_id)
-print(task.state)  # PENDING, SUCCESS, FAILURE, etc.
-print(task.result)  # Task result when completed
+
+# Check task state
+print(task.state)  # PENDING, SUCCESS, FAILURE, RETRY, REVOKED, etc.
+
+# Get task result (if completed)
+if task.ready():
+    print(task.result)  # Task result when completed
+    if task.successful():
+        print("Task completed successfully")
+        print(task.result)
+    else:
+        print("Task failed")
+        print(task.traceback)
+
+# Wait for task to complete (blocking)
+result = task.get(timeout=10)  # Wait up to 10 seconds
+print(result)
 ```
+
+### Task States
+
+- **PENDING**: Task is waiting to be processed
+- **STARTED**: Task has been started by a worker
+- **SUCCESS**: Task completed successfully
+- **FAILURE**: Task failed with an exception
+- **RETRY**: Task is being retried after a failure
+- **REVOKED**: Task was cancelled before execution
+
+### Redis Queue Inspection
+
+You can inspect the Redis queue directly:
+
+```bash
+# Connect to Redis
+redis-cli
+
+# Check queue length
+LLEN celery
+
+# View queued tasks (first 10)
+LRANGE celery 0 9
+
+# Clear all queued tasks (use with caution!)
+FLUSHDB
+```
+
+### Configuration
+
+Celery configuration is managed in `config.py` and can be overridden with environment variables:
+
+- `HEALTH_SVC_REDIS_URL`: Redis connection URL (default: `redis://localhost:6379`)
+- `HEALTH_SVC_REDIS_DB`: Redis database number (default: `0`)
+- `HEALTH_SVC_CELERY_TASK_SERIALIZER`: Task serializer (default: `json`)
+- `HEALTH_SVC_CELERY_RESULT_SERIALIZER`: Result serializer (default: `json`)
+
+### Best Practices
+
+1. **Always run a worker** when using background tasks
+2. **Monitor with Flower** during development to debug issues
+3. **Check worker logs** for detailed error information
+4. **Use appropriate log levels**: `--loglevel=info` for development, `--loglevel=warning` for production
+5. **Set up process management** (systemd, supervisor, etc.) for production deployments
+6. **Monitor Redis memory** usage if processing many tasks
+7. **Handle task failures gracefully** with proper error handling and retries
 
 ## 🔒 Security Notes
 

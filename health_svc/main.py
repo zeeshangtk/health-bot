@@ -14,8 +14,8 @@ app = FastAPI(
     description="REST API for health record management. Track and manage patient health records including blood pressure, weight, temperature, and other measurements.",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url=None,
-    openapi_url=None
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
 )
 
 # Configure CORS to allow telegram_bot to call API
