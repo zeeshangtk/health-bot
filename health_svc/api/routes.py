@@ -2,10 +2,7 @@
 FastAPI route definitions for Health Service API.
 """
 import logging
-import uuid
-from datetime import datetime, timezone
-from pathlib import Path
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, status
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from typing import Optional, List
 
 from api.schemas import (
@@ -17,26 +14,17 @@ from api.schemas import (
 )
 from services.health_service import HealthService
 from services.patient_service import PatientService
-from config import UPLOAD_DIR, UPLOAD_MAX_SIZE
-from tasks.upload_tasks import process_uploaded_file
+from services.upload_service import UploadService
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
-# Allowed image MIME types and extensions
-ALLOWED_IMAGE_TYPES = {
-    "image/jpeg": [".jpg", ".jpeg"],
-    "image/png": [".png"],
-    "image/gif": [".gif"],
-    "image/bmp": [".bmp"]
-}
-ALLOWED_EXTENSIONS = {ext for exts in ALLOWED_IMAGE_TYPES.values() for ext in exts}
 
 router = APIRouter()
 
 # Initialize services
 health_service = HealthService()
 patient_service = PatientService()
+upload_service = UploadService()
 
 
 @router.get("/", tags=["Health"])
@@ -184,122 +172,12 @@ async def upload_image(file: UploadFile = File(..., description="Image file to u
     - 415 Unsupported Media Type: If the upload is not multipart/form-data
     - 500 Internal Server Error: For file system write failures
     """
-    # Validate file is provided
-    if not file:
-        logger.error("No file provided in upload request")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No file provided"
-        )
+    unique_filename, file_path, task_id = await upload_service.save_uploaded_file(file)
     
-    # Validate content type
-    if not file.content_type:
-        logger.error("File has no content type")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File content type is missing"
-        )
-    
-    if file.content_type not in ALLOWED_IMAGE_TYPES:
-        logger.error(f"Invalid content type: {file.content_type}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type. Allowed types: {', '.join(ALLOWED_IMAGE_TYPES.keys())}"
-        )
-    
-    # Validate file extension
-    file_extension = Path(file.filename).suffix.lower() if file.filename else ""
-    if not file_extension or file_extension not in ALLOWED_EXTENSIONS:
-        logger.error(f"Invalid file extension: {file_extension}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file extension. Allowed extensions: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
-        )
-    
-    # Verify extension matches content type
-    expected_extensions = ALLOWED_IMAGE_TYPES.get(file.content_type, [])
-    if file_extension not in expected_extensions:
-        logger.error(f"File extension {file_extension} does not match content type {file.content_type}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File extension does not match content type"
-        )
-    
-    try:
-        # Read file content to check size and validate
-        file_content = await file.read()
-        file_size = len(file_content)
-        
-        # Validate file size
-        if file_size == 0:
-            logger.error("Empty file uploaded")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File is empty"
-            )
-        
-        if file_size > UPLOAD_MAX_SIZE:
-            logger.error(f"File size {file_size} exceeds maximum {UPLOAD_MAX_SIZE}")
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"File size exceeds maximum allowed size of {UPLOAD_MAX_SIZE / (1024 * 1024):.1f}MB"
-            )
-        
-        # Generate unique filename
-        unique_id = str(uuid.uuid4())
-        unique_filename = f"{unique_id}{file_extension}"
-        upload_path = Path(UPLOAD_DIR) / unique_filename
-        
-        # Ensure upload directory exists (should already exist from config, but double-check)
-        upload_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Write file to disk
-        try:
-            with open(upload_path, "wb") as f:
-                f.write(file_content)
-            logger.info(f"Successfully uploaded file: {unique_filename} (size: {file_size} bytes)")
-        except OSError as e:
-            logger.error(f"Failed to write file to disk: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to save file to disk"
-            )
-        
-        # Queue Celery task for background processing
-        task_id = None
-        try:
-            upload_timestamp = datetime.now(timezone.utc).isoformat()
-            task = process_uploaded_file.delay(
-                filename=unique_filename,
-                file_path=str(upload_path),
-                file_size=file_size,
-                content_type=file.content_type,
-                upload_timestamp=upload_timestamp
-            )
-            task_id = task.id
-            logger.info(f"Queued background processing task {task_id} for file: {unique_filename}")
-        except Exception as e:
-            # Log error but don't fail the upload if task queuing fails
-            logger.error(
-                f"Failed to queue background processing task for {unique_filename}: {str(e)}",
-                exc_info=True
-            )
-            # Continue with response even if task queuing failed
-        
-        return ImageUploadResponse(
-            status="success",
-            filename=unique_filename,
-            message="Image uploaded successfully",
-            task_id=task_id
-        )
-        
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error during file upload: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred while processing the upload"
-        )
+    return ImageUploadResponse(
+        status="success",
+        filename=unique_filename,
+        message="Image uploaded successfully",
+        task_id=task_id
+    )
 
