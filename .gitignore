@@ -31,3 +31,6 @@ data/
 .DS_Store
 Thumbs.db
 
+# Justfile process tracking
+.pids/
+

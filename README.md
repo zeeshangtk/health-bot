@@ -31,6 +31,7 @@ health-bot/
 │   ├── bot.py              # Bot entry point
 │   └── requirements.txt    # Python dependencies
 │
+├── justfile                 # Task runner for monorepo management
 └── venv/                   # Virtual environment (shared)
 ```
 
@@ -40,8 +41,24 @@ health-bot/
 
 - Python 3.13+ (or compatible version)
 - Telegram Bot Token (get from [@BotFather](https://t.me/botfather))
+- [just](https://github.com/casey/just) (optional but recommended) - Task runner for managing the monorepo
+  - Install: `brew install just` (macOS) or see [installation guide](https://github.com/casey/just#installation)
 
-### 1. Setup Virtual Environment
+### 1. Setup Project (Using Justfile - Recommended)
+
+If you have `just` installed, you can use the justfile for easy project management:
+
+```bash
+# Complete setup: create venv, install dependencies, run migrations
+just setup
+
+# Check environment variables
+just check-env
+```
+
+### 1. Setup Project (Manual)
+
+Alternatively, set up manually:
 
 ```bash
 # Create virtual environment (if not already created)
@@ -49,11 +66,7 @@ python3 -m venv venv
 
 # Activate virtual environment
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
 
-### 2. Install Dependencies
-
-```bash
 # Install health service dependencies
 cd health_svc
 pip install -r requirements.txt
@@ -66,7 +79,7 @@ pip install -r requirements.txt
 cd ..
 ```
 
-### 3. Configure Environment Variables
+### 2. Configure Environment Variables
 
 Create a `.env` file in the root directory or set environment variables:
 
@@ -84,10 +97,18 @@ export HEALTH_SVC_DB_DIR="data"
 export HEALTH_SVC_DB_FILE="health_bot.db"
 ```
 
-### 4. Initialize Database (Optional)
+### 3. Initialize Database (Optional)
 
 The database will be created automatically on first use, but you can run migrations manually:
 
+**Using justfile:**
+```bash
+just migrate-status    # Check migration status
+just migrate           # Run migration with backup
+just migrate-dry-run   # Test migration without changes
+```
+
+**Manual:**
 ```bash
 cd health_svc
 python migrate_db.py --status
@@ -95,7 +116,26 @@ python migrate_db.py --status
 
 ## 🧪 Running Tests
 
-### Run All Tests
+### Using Justfile (Recommended)
+
+```bash
+# Run all tests
+just test
+
+# Run tests for specific service
+just test-api      # Health service tests
+just test-bot      # Telegram bot tests
+
+# Run tests with coverage
+just test-coverage
+just test-coverage-api
+just test-coverage-bot
+
+# Watch mode (auto-rerun on file changes)
+just test-watch
+```
+
+### Manual Testing
 
 Run tests for both modules:
 
@@ -126,7 +166,52 @@ cd health_svc && python -m pytest tests/ -v && cd ..
 
 ## 🖥️ Running the Servers
 
-### Start Health Service API
+### Using Justfile (Recommended)
+
+The easiest way to manage all services:
+
+```bash
+# Start all services (API, Celery, Flower, Bot)
+just
+
+# Or start individually
+just start-api      # Start FastAPI server
+just start-celery   # Start Celery worker
+just start-flower   # Start Flower (Celery monitoring)
+just start-bot      # Start Telegram bot
+
+# Check service status
+just status
+
+# Stop all services
+just stop-all
+
+# Restart all services
+just restart
+
+# View logs
+just logs           # View recent logs
+just logs-follow    # Follow logs in real-time
+
+# Open API docs in browser
+just docs
+
+# Open Flower in browser
+just flower-open
+```
+
+**Note**: Make sure Redis is running before starting Celery/Flower:
+```bash
+# Check Redis status
+just check-redis
+
+# Start Redis (if not running)
+redis-server
+```
+
+### Manual Server Startup
+
+#### Start Health Service API
 
 The health service must be running before starting the telegram bot.
 
@@ -150,7 +235,7 @@ The API will be available at:
 
 **💡 Tip:** Use the Swagger UI at `/docs` to interactively test all API endpoints directly from your browser!
 
-### Start Telegram Bot
+#### Start Telegram Bot
 
 In a **separate terminal**, start the telegram bot:
 
@@ -169,7 +254,82 @@ python bot.py
 
 ## 📋 Available Commands
 
-### Health Service
+### Using Justfile
+
+The project includes a comprehensive `justfile` for managing all aspects of the monorepo. Run `just --list` or `just help` to see all available commands.
+
+#### Service Management
+```bash
+just                    # Start all services (default)
+just start-api          # Start FastAPI server
+just start-celery       # Start Celery worker
+just start-flower       # Start Flower (Celery monitoring)
+just start-bot          # Start Telegram bot
+just stop-all           # Stop all services
+just stop-api           # Stop FastAPI server
+just stop-celery        # Stop Celery worker
+just stop-flower        # Stop Flower
+just stop-bot           # Stop Telegram bot
+just status             # Check status of all services
+just restart            # Restart all services
+```
+
+#### Dependency Management
+```bash
+just install            # Install all dependencies
+just install-api        # Install health_svc dependencies
+just install-bot        # Install telegram_bot dependencies
+just update             # Update all dependencies
+just update-api         # Update health_svc dependencies
+just update-bot         # Update telegram_bot dependencies
+```
+
+#### Testing
+```bash
+just test               # Run all tests
+just test-api           # Run health_svc tests
+just test-bot           # Run telegram_bot tests
+just test-coverage      # Run all tests with coverage
+just test-coverage-api  # Run health_svc tests with coverage
+just test-coverage-bot  # Run telegram_bot tests with coverage
+just test-watch         # Run tests in watch mode
+```
+
+#### Development Utilities
+```bash
+just lint               # Run linters (ruff, pylint)
+just format             # Format code (black, ruff)
+just clean              # Clean Python cache files
+just logs               # View service logs
+just logs-follow        # Follow logs in real-time
+```
+
+#### Database Management
+```bash
+just migrate            # Run database migration with backup
+just migrate-status     # Check migration status
+just migrate-dry-run    # Test migration without changes
+just db-reset           # Reset database (with confirmation)
+```
+
+#### Environment & Setup
+```bash
+just setup              # Complete project setup
+just venv               # Create virtual environment
+just check-env          # Check environment variables
+just check-redis        # Check if Redis is running
+```
+
+#### Utilities
+```bash
+just help               # Show all available commands
+just docs               # Open API docs in browser
+just flower-open        # Open Flower in browser
+```
+
+### Manual Commands
+
+#### Health Service
 
 ```bash
 # Start API server
@@ -185,7 +345,7 @@ python migrate_db.py --dry-run         # Test migration without changes
 python -m pytest tests/ -v
 ```
 
-### Telegram Bot
+#### Telegram Bot
 
 ```bash
 # Start bot
@@ -206,12 +366,22 @@ Environment variables (with defaults):
 - `HEALTH_SVC_DB_DIR` - Database directory (default: `data`)
 - `HEALTH_SVC_DB_FILE` - Database filename (default: `health_bot.db`)
 - `HEALTH_SVC_RELOAD` - Enable auto-reload (default: `false`)
+- `HEALTH_SVC_REDIS_URL` - Redis URL for Celery (default: `redis://localhost:6379`)
 
 ### Telegram Bot Configuration
 
 Environment variables (with defaults):
 - `TELEGRAM_TOKEN` - **Required** - Telegram bot token
 - `HEALTH_SVC_API_URL` - Health service API URL (default: `http://localhost:8000`)
+
+### Checking Configuration
+
+Use the justfile to check your environment setup:
+
+```bash
+just check-env      # Check environment variables
+just check-redis    # Check if Redis is running
+```
 
 ## 📚 API Endpoints
 
