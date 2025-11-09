@@ -37,7 +37,11 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
     
     This handler catches:
     - Unknown commands (e.g., /unknown_command)
-    - Any text message that doesn't match existing conversation flows
+    - Any text message that doesn't match existing conversation flows (only in private chats)
+    
+    In group chats, this handler only responds to:
+    - Unknown commands
+    - Messages that mention the bot
     
     Provides a helpful guide message with all available commands and optional
     inline keyboard buttons for easy access.
@@ -49,6 +53,10 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
     if not update.message:
         logger.warning("Unknown command handler triggered but no message found in update")
         return
+    
+    # Check if this is a group chat
+    chat = update.effective_chat
+    is_group = chat.type in ["group", "supergroup"]
     
     # Extract the message text
     message_text = update.message.text if update.message.text else ""
@@ -66,6 +74,34 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
                     f"User {update.effective_user.id} sent unknown command: {command_text}"
                 )
                 break
+    
+    # In group chats, only respond to commands or when bot is mentioned
+    if is_group:
+        # Check if bot is mentioned in the message
+        bot_mentioned = False
+        if update.message.entities:
+            bot_username = context.bot.username if context.bot.username else None
+            bot_id = context.bot.id
+            
+            for entity in update.message.entities:
+                # Check for @username mentions
+                if entity.type == "mention" and bot_username:
+                    mention_text = message_text[entity.offset:entity.offset + entity.length]
+                    if mention_text == f"@{bot_username}":
+                        bot_mentioned = True
+                        break
+                # Check for text_mention (when user is mentioned by name)
+                elif entity.type == "text_mention" and hasattr(entity, 'user'):
+                    if entity.user and entity.user.id == bot_id:
+                        bot_mentioned = True
+                        break
+        
+        # If it's not a command and bot is not mentioned, ignore the message
+        if not is_command and not bot_mentioned:
+            logger.debug(
+                f"Ignoring non-command message in group chat from user {update.effective_user.id}"
+            )
+            return
     
     # Log the unrecognized input
     user_id = update.effective_user.id
@@ -243,6 +279,10 @@ def get_unknown_command_handler() -> MessageHandler:
     - Unknown commands (commands not registered with CommandHandler)
     - Text messages that don't match any ConversationHandler state
     
+    In group chats, the handler will only respond to:
+    - Commands (handled by the handler logic)
+    - Messages that mention the bot (handled by the handler logic)
+    
     Integration note: This handler must be registered LAST (after all other
     handlers) in bot.py's main() function to ensure it only triggers as a
     fallback when no other handler matches.
@@ -250,7 +290,12 @@ def get_unknown_command_handler() -> MessageHandler:
     Returns:
         MessageHandler: Configured message handler with TEXT filter
     """
-    return MessageHandler(filters.TEXT, unknown_command_handler)
+    # Filter to match text messages, commands, or messages mentioning the bot
+    # The handler logic will further filter to ignore casual group chat messages
+    return MessageHandler(
+        filters.TEXT | filters.COMMAND,
+        unknown_command_handler
+    )
 
 
 def get_help_callback_handler():
