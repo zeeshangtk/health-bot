@@ -22,8 +22,9 @@ TEST_RECORD = {
     "timestamp": "2025-01-01T10:00:00",
     "patient": TEST_PATIENT_NAME,
     "record_type": "BP",
-    "data_type": "text",
-    "value": "120/80"
+    "value": "120/80",
+    "unit": "mmHg",
+    "lab_name": "self"
 }
 
 
@@ -115,7 +116,6 @@ async def test_save_record_success(mock_client):
             timestamp=timestamp,
             patient=TEST_PATIENT_NAME,
             record_type="BP",
-            data_type="text",
             value="120/80"
         )
         
@@ -124,17 +124,16 @@ async def test_save_record_success(mock_client):
         assert result["value"] == "120/80"
         
         # Verify the request was made with correct parameters
-        mock_request.assert_called_once_with(
-            "POST",
-            "/api/v1/records",
-            json={
-                "timestamp": timestamp.isoformat(),
-                "patient": TEST_PATIENT_NAME,
-                "record_type": "BP",
-                "data_type": "text",
-                "value": "120/80"
-            }
-        )
+        mock_request.assert_called_once()
+        call_args = mock_request.call_args
+        assert call_args[0][0] == "POST"
+        assert call_args[0][1] == "/api/v1/records"
+        json_payload = call_args[1]["json"]
+        assert json_payload["timestamp"] == timestamp.isoformat()
+        assert json_payload["patient"] == TEST_PATIENT_NAME
+        assert json_payload["record_type"] == "BP"
+        assert json_payload["value"] == "120/80"
+        assert json_payload.get("lab_name") == "self"  # Default value
 
 
 @pytest.mark.asyncio
@@ -150,7 +149,6 @@ async def test_save_record_patient_not_found(mock_client):
                 timestamp=timestamp,
                 patient="NonExistent",
                 record_type="BP",
-                data_type="text",
                 value="120/80"
             )
         

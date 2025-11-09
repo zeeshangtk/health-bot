@@ -88,29 +88,43 @@ class HealthAPIClient:
         timestamp: datetime,
         patient: str,
         record_type: str,
-        data_type: str,
-        value: str
+        value: str,
+        unit: Optional[str] = None,
+        lab_name: Optional[str] = "self"
     ) -> Dict[str, Any]:
         """
         Save a health record.
         
+        Args:
+            timestamp: When the record was created
+            patient: Patient name (must exist in the system)
+            record_type: Type of measurement (e.g., 'BP', 'Weight', 'Temperature')
+            value: The actual measurement value
+            unit: Unit of measurement (optional, e.g., 'mg/dl', 'mmHg', 'kg')
+            lab_name: Name of the laboratory or facility (optional, defaults to "self")
+        
         Returns:
-            Dict with record data (timestamp, patient, record_type, data_type, value)
+            Dict with record data (timestamp, patient, record_type, value, unit, lab_name)
         
         Raises:
             ValueError: If patient not found or API error
             ConnectionError: If connection fails
         """
+        payload = {
+            "timestamp": timestamp.isoformat(),
+            "patient": patient,
+            "record_type": record_type,
+            "value": value
+        }
+        if unit is not None:
+            payload["unit"] = unit
+        if lab_name is not None:
+            payload["lab_name"] = lab_name
+        
         return await self._request(
             "POST",
             "/api/v1/records",
-            json={
-                "timestamp": timestamp.isoformat(),
-                "patient": patient,
-                "record_type": record_type,
-                "data_type": data_type,
-                "value": value
-            }
+            json=payload
         )
     
     async def get_records(

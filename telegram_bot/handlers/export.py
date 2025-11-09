@@ -138,7 +138,7 @@ def _create_csv_file(records, file_path: Path) -> None:
         file_path: Path where CSV file should be created
     """
     with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['timestamp', 'patient', 'record_type', 'data_type', 'value']
+        fieldnames = ['timestamp', 'patient', 'record_type', 'value', 'unit', 'lab_name']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         
         writer.writeheader()
@@ -147,8 +147,9 @@ def _create_csv_file(records, file_path: Path) -> None:
                 'timestamp': record['timestamp'],
                 'patient': record['patient'],
                 'record_type': record['record_type'],
-                'data_type': record['data_type'],
-                'value': record['value']
+                'value': record['value'],
+                'unit': record.get('unit', ''),
+                'lab_name': record.get('lab_name', 'self')
             })
 
 
@@ -166,8 +167,9 @@ def _create_json_file(records, file_path: Path) -> None:
             'timestamp': record['timestamp'],
             'patient': record['patient'],
             'record_type': record['record_type'],
-            'data_type': record['data_type'],
-            'value': record['value']
+            'value': record['value'],
+            'unit': record.get('unit'),
+            'lab_name': record.get('lab_name', 'self')
         })
     
     with open(file_path, 'w', encoding='utf-8') as jsonfile:

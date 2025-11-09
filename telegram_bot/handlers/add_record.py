@@ -211,22 +211,29 @@ async def value_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             timestamp=timestamp,
             patient=patient_name,
             record_type=record_type,
-            data_type="text",  # As per requirements: data_type is "text"
             value=value_text
         )
         
         # Parse timestamp from API response (ISO format string)
         timestamp_str = datetime.fromisoformat(result["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
         
-        # Send confirmation message
+        # Build confirmation message
         confirmation_message = (
             "✅ **Record Saved Successfully!**\n\n"
             f"📅 Timestamp: {timestamp_str}\n"
             f"👤 Patient: {result['patient']}\n"
             f"📋 Record Type: {result['record_type']}\n"
-            f"📝 Data Type: {result['data_type']}\n"
             f"💾 Value: {result['value']}"
         )
+        
+        # Add unit if present
+        if result.get("unit"):
+            confirmation_message += f"\n📏 Unit: {result['unit']}"
+        
+        # Add lab name if present (or show default)
+        lab_name = result.get("lab_name", "self")
+        if lab_name:
+            confirmation_message += f"\n🏥 Lab: {lab_name}"
         
         await update.message.reply_text(
             confirmation_message,

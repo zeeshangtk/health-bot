@@ -21,8 +21,9 @@ TEST_RECORD_RESPONSE = {
     "timestamp": "2025-01-01T10:00:00",
     "patient": TEST_PATIENT,
     "record_type": TEST_RECORD_TYPE,
-    "data_type": "text",
-    "value": TEST_VALUE
+    "value": TEST_VALUE,
+    "unit": None,
+    "lab_name": "self"
 }
 
 
@@ -85,7 +86,8 @@ async def test_value_received_saves_record(mock_api_client, mock_update, mock_co
     assert call_kwargs["patient"] == TEST_PATIENT
     assert call_kwargs["record_type"] == TEST_RECORD_TYPE
     assert call_kwargs["value"] == TEST_VALUE
-    assert call_kwargs["data_type"] == "text"
+    # lab_name defaults to "self" in the API client, but may not be in kwargs if not explicitly passed
+    # The default is handled by the API client method signature
     assert isinstance(call_kwargs["timestamp"], datetime)
     
     # Verify conversation ended
