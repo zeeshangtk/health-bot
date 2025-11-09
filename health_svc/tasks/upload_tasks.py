@@ -111,7 +111,7 @@ def get_sample_lab_report() -> dict:
     
     # Create patient information
     patient_info = PatientInfo(
-        patient_name="Mrs Test Patient",
+        patient_name="Test Patient",
         patient_id="ABB17985",
         age_sex="63Y / FEMALE",
         sample_date="08-11-2025 03:17 PM",

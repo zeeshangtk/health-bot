@@ -156,6 +156,55 @@ class HealthAPIClient:
             params["limit"] = limit
         
         return await self._request("GET", "/api/v1/records", params=params)
+    
+    async def upload_record_image(
+        self,
+        file_content: bytes,
+        filename: str,
+        content_type: str,
+        patient: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Upload a medical lab report image.
+        
+        Args:
+            file_content: Binary content of the image file
+            filename: Original filename
+            content_type: MIME type of the file (e.g., 'image/jpeg')
+            patient: Patient name (optional, may be passed as form field or query param)
+        
+        Returns:
+            Dict with upload response (status, filename, message, task_id)
+        
+        Raises:
+            ValueError: If API error occurs
+            ConnectionError: If connection fails
+        """
+        url = f"{self.base_url}/api/v1/records/upload"
+        
+        # Prepare multipart form data
+        files = {
+            "file": (filename, file_content, content_type)
+        }
+        
+        # Add patient as form field if provided
+        data = {}
+        if patient:
+            data["patient"] = patient
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:  # Longer timeout for file uploads
+                response = await client.post(url, files=files, data=data)
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            error_msg = f"API error {e.response.status_code}: {e.response.text}"
+            logger.error(error_msg)
+            raise ValueError(error_msg) from e
+        except httpx.RequestError as e:
+            error_msg = f"Request error: {e}"
+            logger.error(error_msg)
+            raise ConnectionError(error_msg) from e
 
 
 # Global client instance

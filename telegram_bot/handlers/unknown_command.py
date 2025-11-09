@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 RECOGNIZED_COMMANDS = [
     "/start",
     "/add_record",
+    "/upload_record",
     "/view_records",
     "/add_patient",
     "/get_patients",
@@ -78,6 +79,7 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
         "🤔 Sorry, I didn't understand that command.\n\n"
         "Here are the commands I support:\n\n"
         "/add_record — Add a new medical record (text or photo)\n"
+        "/upload_record — Upload a medical lab report image\n"
         "/view_records — View recent records\n"
         "/add_patient — Add a new patient\n"
         "/get_patients — List all patients\n"
@@ -91,17 +93,18 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
     keyboard = [
         [
             InlineKeyboardButton("➕ Add Record", callback_data="/add_record"),
+            InlineKeyboardButton("📸 Upload Record", callback_data="/upload_record"),
+        ],
+        [
             InlineKeyboardButton("👁️ View Records", callback_data="/view_records"),
+            InlineKeyboardButton("📥 Export", callback_data="/export"),
         ],
         [
             InlineKeyboardButton("➕ Add Patient", callback_data="/add_patient"),
             InlineKeyboardButton("👥 Get Patients", callback_data="/get_patients"),
         ],
         [
-            InlineKeyboardButton("📥 Export", callback_data="/export"),
             InlineKeyboardButton("❌ Cancel", callback_data="/cancel"),
-        ],
-        [
             InlineKeyboardButton("🏠 Start", callback_data="/start"),
         ],
     ]
