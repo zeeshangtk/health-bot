@@ -22,17 +22,18 @@ health-bot/
 │   ├── tests/              # Unit tests
 │   ├── main.py             # FastAPI application entry point
 │   ├── migrate_db.py        # Database migration script
-│   └── requirements.txt    # Python dependencies
+│   ├── requirements.txt    # Python dependencies
+│   └── venv/               # Virtual environment (service-specific)
 │
 ├── telegram_bot/            # Telegram Bot (Frontend)
 │   ├── handlers/           # Bot command handlers
 │   ├── clients/            # API client for health_svc
 │   ├── tests/              # Unit tests
 │   ├── bot.py              # Bot entry point
-│   └── requirements.txt    # Python dependencies
+│   ├── requirements.txt    # Python dependencies
+│   └── venv/               # Virtual environment (service-specific)
 │
-├── justfile                 # Task runner for monorepo management
-└── venv/                   # Virtual environment (shared)
+└── justfile                 # Task runner for monorepo management
 ```
 
 ## 🚀 Quick Start
@@ -61,21 +62,22 @@ just check-env
 Alternatively, set up manually:
 
 ```bash
-# Create virtual environment (if not already created)
-python3 -m venv venv
-
-# Activate virtual environment
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Create virtual environments for each service
+python3 -m venv health_svc/venv
+python3 -m venv telegram_bot/venv
 
 # Install health service dependencies
 cd health_svc
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
+deactivate
+cd ..
 
 # Install telegram bot dependencies
-cd ../telegram_bot
+cd telegram_bot
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-# Return to root
+deactivate
 cd ..
 ```
 
@@ -140,16 +142,19 @@ just test-watch
 Run tests for both modules:
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate
-
 # Run telegram_bot tests
 cd telegram_bot
+source venv/bin/activate
 python -m pytest tests/ -v
+deactivate
+cd ..
 
 # Run health_svc tests
-cd ../health_svc
+cd health_svc
+source venv/bin/activate
 python -m pytest tests/ -v
+deactivate
+cd ..
 ```
 
 ### Run Tests from Root
@@ -216,11 +221,11 @@ redis-server
 The health service must be running before starting the telegram bot.
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate
-
 # Navigate to health_svc directory
 cd health_svc
+
+# Activate virtual environment
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Start the API server
 python main.py
@@ -240,11 +245,11 @@ The API will be available at:
 In a **separate terminal**, start the telegram bot:
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate
-
 # Navigate to telegram_bot directory
 cd telegram_bot
+
+# Activate virtual environment
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Start the bot
 python bot.py
@@ -334,6 +339,7 @@ just flower-open        # Open Flower in browser
 ```bash
 # Start API server
 cd health_svc
+source venv/bin/activate
 python main.py
 
 # Run database migration
@@ -350,6 +356,7 @@ python -m pytest tests/ -v
 ```bash
 # Start bot
 cd telegram_bot
+source venv/bin/activate
 python bot.py
 
 # Run tests

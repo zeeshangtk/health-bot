@@ -1,4 +1,6 @@
-# Virtual Environment
+# Virtual Environments (service-specific)
+health_svc/venv/
+telegram_bot/venv/
 venv/
 env/
 ENV/

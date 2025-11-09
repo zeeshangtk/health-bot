@@ -8,10 +8,9 @@
 # Project directories
 api_dir := "health_svc"
 bot_dir := "telegram_bot"
-venv_dir := "venv"
 
-# Python executable (use venv if available, otherwise system Python)
-# Note: These are set per-recipe using shell logic
+# Python executable (use service-specific venv if available, otherwise system Python)
+# Note: Each service has its own venv directory (health_svc/venv, telegram_bot/venv)
 
 # Service ports
 api_port := "8000"
@@ -60,8 +59,8 @@ start-api:
             rm -f "$API_PID"
         fi
     fi
-    if [ -d "venv" ]; then
-        PYTHON="$(pwd)/venv/bin/python"
+    if [ -d "{{api_dir}}/venv" ]; then
+        PYTHON="$(pwd)/{{api_dir}}/venv/bin/python"
     else
         PYTHON="python3"
     fi
@@ -103,8 +102,8 @@ start-celery:
         echo "   Please start Redis: redis-server"
         exit 1
     fi
-    if [ -d "venv" ]; then
-        PYTHON="$(pwd)/venv/bin/python"
+    if [ -d "{{api_dir}}/venv" ]; then
+        PYTHON="$(pwd)/{{api_dir}}/venv/bin/python"
     else
         PYTHON="python3"
     fi
@@ -144,8 +143,8 @@ start-flower:
         echo "   Please start Redis: redis-server"
         exit 1
     fi
-    if [ -d "venv" ]; then
-        PYTHON="$(pwd)/venv/bin/python"
+    if [ -d "{{api_dir}}/venv" ]; then
+        PYTHON="$(pwd)/{{api_dir}}/venv/bin/python"
     else
         PYTHON="python3"
     fi
@@ -177,8 +176,8 @@ start-bot:
             rm -f "$BOT_PID"
         fi
     fi
-    if [ -d "venv" ]; then
-        PYTHON="$(pwd)/venv/bin/python"
+    if [ -d "{{bot_dir}}/venv" ]; then
+        PYTHON="$(pwd)/{{bot_dir}}/venv/bin/python"
     else
         PYTHON="python3"
     fi
@@ -338,8 +337,8 @@ install:
 install-api:
     #!/usr/bin/env bash
     echo "Installing health_svc dependencies..."
-    if [ -d "venv" ]; then
-        PIP="$(pwd)/venv/bin/pip"
+    if [ -d "{{api_dir}}/venv" ]; then
+        PIP="$(pwd)/{{api_dir}}/venv/bin/pip"
     else
         PIP="pip3"
     fi
@@ -350,8 +349,8 @@ install-api:
 install-bot:
     #!/usr/bin/env bash
     echo "Installing telegram_bot dependencies..."
-    if [ -d "venv" ]; then
-        PIP="$(pwd)/venv/bin/pip"
+    if [ -d "{{bot_dir}}/venv" ]; then
+        PIP="$(pwd)/{{bot_dir}}/venv/bin/pip"
     else
         PIP="pip3"
     fi
@@ -369,8 +368,8 @@ update:
 update-api:
     #!/usr/bin/env bash
     echo "Updating health_svc dependencies..."
-    if [ -d "venv" ]; then
-        PIP="$(pwd)/venv/bin/pip"
+    if [ -d "{{api_dir}}/venv" ]; then
+        PIP="$(pwd)/{{api_dir}}/venv/bin/pip"
     else
         PIP="pip3"
     fi
@@ -381,8 +380,8 @@ update-api:
 update-bot:
     #!/usr/bin/env bash
     echo "Updating telegram_bot dependencies..."
-    if [ -d "venv" ]; then
-        PIP="$(pwd)/venv/bin/pip"
+    if [ -d "{{bot_dir}}/venv" ]; then
+        PIP="$(pwd)/{{bot_dir}}/venv/bin/pip"
     else
         PIP="pip3"
     fi
@@ -404,8 +403,8 @@ test:
 test-api:
     #!/usr/bin/env bash
     echo "Running health_svc tests..."
-    if [ -d "venv" ]; then
-        PYTHON="$(pwd)/venv/bin/python"
+    if [ -d "{{api_dir}}/venv" ]; then
+        PYTHON="$(pwd)/{{api_dir}}/venv/bin/python"
     else
         PYTHON="python3"
     fi
@@ -416,8 +415,8 @@ test-api:
 test-bot:
     #!/usr/bin/env bash
     echo "Running telegram_bot tests..."
-    if [ -d "venv" ]; then
-        PYTHON="$(pwd)/venv/bin/python"
+    if [ -d "{{bot_dir}}/venv" ]; then
+        PYTHON="$(pwd)/{{bot_dir}}/venv/bin/python"
     else
         PYTHON="python3"
     fi
@@ -435,8 +434,8 @@ test-coverage:
 test-coverage-api:
     #!/usr/bin/env bash
     echo "Running health_svc tests with coverage..."
-    if [ -d "venv" ]; then
-        PYTHON="$(pwd)/venv/bin/python"
+    if [ -d "{{api_dir}}/venv" ]; then
+        PYTHON="$(pwd)/{{api_dir}}/venv/bin/python"
     else
         PYTHON="python3"
     fi
@@ -447,8 +446,8 @@ test-coverage-api:
 test-coverage-bot:
     #!/usr/bin/env bash
     echo "Running telegram_bot tests with coverage..."
-    if [ -d "venv" ]; then
-        PYTHON="$(pwd)/venv/bin/python"
+    if [ -d "{{bot_dir}}/venv" ]; then
+        PYTHON="$(pwd)/{{bot_dir}}/venv/bin/python"
     else
         PYTHON="python3"
     fi
@@ -459,18 +458,31 @@ test-coverage-bot:
 test-watch:
     #!/usr/bin/env bash
     echo "Running tests in watch mode..."
-    if [ -d "venv" ]; then
-        PIP="$(pwd)/venv/bin/pip"
+    if [ -d "{{api_dir}}/venv" ]; then
+        API_PIP="$(pwd)/{{api_dir}}/venv/bin/pip"
+        API_PYTHON="$(pwd)/{{api_dir}}/venv/bin/python"
     else
-        PIP="pip3"
+        API_PIP="pip3"
+        API_PYTHON="python3"
     fi
-    if ! $PIP show pytest-watch > /dev/null 2>&1; then
-        echo "Installing pytest-watch..."
-        $PIP install pytest-watch
+    if [ -d "{{bot_dir}}/venv" ]; then
+        BOT_PIP="$(pwd)/{{bot_dir}}/venv/bin/pip"
+        BOT_PYTHON="$(pwd)/{{bot_dir}}/venv/bin/python"
+    else
+        BOT_PIP="pip3"
+        BOT_PYTHON="python3"
+    fi
+    if ! $API_PIP show pytest-watch > /dev/null 2>&1; then
+        echo "Installing pytest-watch in health_svc..."
+        $API_PIP install pytest-watch
+    fi
+    if ! $BOT_PIP show pytest-watch > /dev/null 2>&1; then
+        echo "Installing pytest-watch in telegram_bot..."
+        $BOT_PIP install pytest-watch
     fi
     echo "Watching for changes. Press Ctrl+C to stop."
-    cd {{api_dir}} && ptw tests/ -- -v &
-    cd {{bot_dir}} && ptw tests/ -- -v &
+    cd {{api_dir}} && $API_PYTHON -m ptw tests/ -- -v &
+    cd {{bot_dir}} && $BOT_PYTHON -m ptw tests/ -- -v &
     wait
 
 # ============================================================================
@@ -481,24 +493,37 @@ test-watch:
 lint:
     #!/usr/bin/env bash
     echo "Running linters..."
-    if [ -d "venv" ]; then
-        PIP="$(pwd)/venv/bin/pip"
-    else
-        PIP="pip3"
-    fi
+    # Try to find ruff in PATH or service venvs
+    RUFF_CMD=""
     if command -v ruff &> /dev/null; then
-        echo "Linting health_svc..."
-        cd {{api_dir}} && ruff check . || true
-        echo "Linting telegram_bot..."
-        cd {{bot_dir}} && ruff check . || true
-    else
-        echo "⚠️  ruff not installed. Install with: $PIP install ruff"
+        RUFF_CMD="ruff"
+    elif [ -f "{{api_dir}}/venv/bin/ruff" ]; then
+        RUFF_CMD="$(pwd)/{{api_dir}}/venv/bin/ruff"
+    elif [ -f "{{bot_dir}}/venv/bin/ruff" ]; then
+        RUFF_CMD="$(pwd)/{{bot_dir}}/venv/bin/ruff"
     fi
+    if [ -n "$RUFF_CMD" ]; then
+        echo "Linting health_svc..."
+        cd {{api_dir}} && $RUFF_CMD check . || true
+        echo "Linting telegram_bot..."
+        cd {{bot_dir}} && $RUFF_CMD check . || true
+    else
+        echo "⚠️  ruff not found. Install with: pip install ruff (in either service venv or system)"
+    fi
+    # Try to find pylint in PATH or service venvs
+    PYLINT_CMD=""
     if command -v pylint &> /dev/null; then
+        PYLINT_CMD="pylint"
+    elif [ -f "{{api_dir}}/venv/bin/pylint" ]; then
+        PYLINT_CMD="$(pwd)/{{api_dir}}/venv/bin/pylint"
+    elif [ -f "{{bot_dir}}/venv/bin/pylint" ]; then
+        PYLINT_CMD="$(pwd)/{{bot_dir}}/venv/bin/pylint"
+    fi
+    if [ -n "$PYLINT_CMD" ]; then
         echo "Running pylint on health_svc..."
-        cd {{api_dir}} && pylint **/*.py --ignore=tests || true
+        cd {{api_dir}} && $PYLINT_CMD **/*.py --ignore=tests || true
         echo "Running pylint on telegram_bot..."
-        cd {{bot_dir}} && pylint **/*.py --ignore=tests || true
+        cd {{bot_dir}} && $PYLINT_CMD **/*.py --ignore=tests || true
     fi
     echo "✅ Linting completed"
 
@@ -506,23 +531,36 @@ lint:
 format:
     #!/usr/bin/env bash
     echo "Formatting code..."
-    if [ -d "venv" ]; then
-        PIP="$(pwd)/venv/bin/pip"
-    else
-        PIP="pip3"
-    fi
+    # Try to find black in PATH or service venvs
+    BLACK_CMD=""
     if command -v black &> /dev/null; then
-        echo "Formatting health_svc..."
-        cd {{api_dir}} && black . || true
-        echo "Formatting telegram_bot..."
-        cd {{bot_dir}} && black . || true
-    else
-        echo "⚠️  black not installed. Install with: $PIP install black"
+        BLACK_CMD="black"
+    elif [ -f "{{api_dir}}/venv/bin/black" ]; then
+        BLACK_CMD="$(pwd)/{{api_dir}}/venv/bin/black"
+    elif [ -f "{{bot_dir}}/venv/bin/black" ]; then
+        BLACK_CMD="$(pwd)/{{bot_dir}}/venv/bin/black"
     fi
+    if [ -n "$BLACK_CMD" ]; then
+        echo "Formatting health_svc..."
+        cd {{api_dir}} && $BLACK_CMD . || true
+        echo "Formatting telegram_bot..."
+        cd {{bot_dir}} && $BLACK_CMD . || true
+    else
+        echo "⚠️  black not found. Install with: pip install black (in either service venv or system)"
+    fi
+    # Try to find ruff in PATH or service venvs
+    RUFF_CMD=""
     if command -v ruff &> /dev/null; then
+        RUFF_CMD="ruff"
+    elif [ -f "{{api_dir}}/venv/bin/ruff" ]; then
+        RUFF_CMD="$(pwd)/{{api_dir}}/venv/bin/ruff"
+    elif [ -f "{{bot_dir}}/venv/bin/ruff" ]; then
+        RUFF_CMD="$(pwd)/{{bot_dir}}/venv/bin/ruff"
+    fi
+    if [ -n "$RUFF_CMD" ]; then
         echo "Formatting with ruff..."
-        cd {{api_dir}} && ruff format . || true
-        cd {{bot_dir}} && ruff format . || true
+        cd {{api_dir}} && $RUFF_CMD format . || true
+        cd {{bot_dir}} && $RUFF_CMD format . || true
     fi
     echo "✅ Code formatted"
 
@@ -573,8 +611,8 @@ logs-follow:
 migrate:
     #!/usr/bin/env bash
     echo "Running database migration..."
-    if [ -d "venv" ]; then
-        PYTHON="$(pwd)/venv/bin/python"
+    if [ -d "{{api_dir}}/venv" ]; then
+        PYTHON="$(pwd)/{{api_dir}}/venv/bin/python"
     else
         PYTHON="python3"
     fi
@@ -585,8 +623,8 @@ migrate:
 migrate-status:
     #!/usr/bin/env bash
     echo "Checking migration status..."
-    if [ -d "venv" ]; then
-        PYTHON="$(pwd)/venv/bin/python"
+    if [ -d "{{api_dir}}/venv" ]; then
+        PYTHON="$(pwd)/{{api_dir}}/venv/bin/python"
     else
         PYTHON="python3"
     fi
@@ -596,8 +634,8 @@ migrate-status:
 migrate-dry-run:
     #!/usr/bin/env bash
     echo "Running migration dry-run..."
-    if [ -d "venv" ]; then
-        PYTHON="$(pwd)/venv/bin/python"
+    if [ -d "{{api_dir}}/venv" ]; then
+        PYTHON="$(pwd)/{{api_dir}}/venv/bin/python"
     else
         PYTHON="python3"
     fi
@@ -631,16 +669,27 @@ setup:
     @echo ""
     @just check-env
 
-# Create virtual environment
+# Create virtual environments for all services
 venv:
-    @if [ -d "{{venv_dir}}" ]; then \
-        echo "⚠️  Virtual environment already exists"; \
+    @echo "Creating virtual environments..."
+    @if [ -d "{{api_dir}}/venv" ]; then \
+        echo "⚠️  {{api_dir}}/venv already exists"; \
     else \
-        echo "Creating virtual environment..."; \
-        python3 -m venv {{venv_dir}}; \
-        echo "✅ Virtual environment created"; \
-        echo "   Activate with: source {{venv_dir}}/bin/activate"; \
+        echo "Creating {{api_dir}}/venv..."; \
+        python3 -m venv {{api_dir}}/venv; \
+        echo "✅ {{api_dir}}/venv created"; \
     fi
+    @if [ -d "{{bot_dir}}/venv" ]; then \
+        echo "⚠️  {{bot_dir}}/venv already exists"; \
+    else \
+        echo "Creating {{bot_dir}}/venv..."; \
+        python3 -m venv {{bot_dir}}/venv; \
+        echo "✅ {{bot_dir}}/venv created"; \
+    fi
+    @echo ""
+    @echo "✅ Virtual environments created!"
+    @echo "   Activate health_svc venv: source {{api_dir}}/venv/bin/activate"
+    @echo "   Activate telegram_bot venv: source {{bot_dir}}/venv/bin/activate"
 
 # Check required environment variables
 check-env:
