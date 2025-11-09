@@ -20,8 +20,9 @@ class HealthService:
         timestamp: datetime,
         patient: str,
         record_type: str,
-        data_type: str,
-        value: str
+        value: str,
+        unit: Optional[str] = None,
+        lab_name: Optional[str] = "self"
     ) -> Dict[str, Any]:
         """
         Save a health record.
@@ -35,8 +36,9 @@ class HealthService:
                 timestamp=timestamp,
                 patient=patient,
                 record_type=record_type,
-                data_type=data_type,
-                value=value
+                value=value,
+                unit=unit,
+                lab_name=lab_name
             )
             
             # Fetch the saved record to return full details
@@ -50,8 +52,9 @@ class HealthService:
                         timestamp=record.timestamp.isoformat(),
                         patient=record.patient,
                         record_type=record.record_type,
-                        data_type=record.data_type,
-                        value=record.value
+                        value=record.value,
+                        unit=record.unit,
+                        lab_name=record.lab_name
                     )
                 }
             else:
@@ -82,8 +85,9 @@ class HealthService:
                 timestamp=record.timestamp.isoformat(),
                 patient=record.patient,
                 record_type=record.record_type,
-                data_type=record.data_type,
-                value=record.value
+                value=record.value,
+                unit=record.unit,
+                lab_name=record.lab_name
             )
             for record in records
         ]

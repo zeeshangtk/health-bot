@@ -46,122 +46,34 @@ class Database:
             )
         """)
         
-        # Check if health_records table exists and what columns it has
+        # Drop and recreate health_records table with new schema
+        # (No data migration needed - dev/non-prod environment)
+        cursor.execute("DROP TABLE IF EXISTS health_records")
         cursor.execute("""
-            SELECT name FROM sqlite_master 
-            WHERE type='table' AND name='health_records'
-        """)
-        table_exists = cursor.fetchone() is not None
-        
-        if table_exists:
-            # Check if migration is needed (check if patient column exists)
-            cursor.execute("PRAGMA table_info(health_records)")
-            columns = [row[1] for row in cursor.fetchall()]
-            
-            if 'patient_id' in columns:
-                # Already migrated, nothing to do
-                pass
-            elif 'patient' in columns:
-                # Need to migrate from patient TEXT to patient_id INTEGER
-                self._migrate_to_foreign_key(conn, cursor)
-            else:
-                # Table exists but has neither patient nor patient_id - recreate with correct schema
-                cursor.execute("DROP TABLE IF EXISTS health_records")
-                cursor.execute("""
-                    CREATE TABLE health_records (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        timestamp TEXT NOT NULL,
-                        patient_id INTEGER NOT NULL,
-                        record_type TEXT NOT NULL,
-                        data_type TEXT NOT NULL,
-                        value TEXT NOT NULL,
-                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (patient_id) REFERENCES patients(id)
-                    )
-                """)
-        else:
-            # Create table with foreign key from scratch
-            cursor.execute("""
-                CREATE TABLE health_records (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT NOT NULL,
-                    patient_id INTEGER NOT NULL,
-                    record_type TEXT NOT NULL,
-                    data_type TEXT NOT NULL,
-                    value TEXT NOT NULL,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (patient_id) REFERENCES patients(id)
-                )
-            """)
-        
-        conn.commit()
-        conn.close()
-    
-    def _migrate_to_foreign_key(self, conn: sqlite3.Connection, cursor: sqlite3.Cursor) -> None:
-        """
-        Migrate existing health_records table from patient TEXT to patient_id INTEGER.
-        """
-        # Add patient_id column
-        cursor.execute("""
-            ALTER TABLE health_records ADD COLUMN patient_id INTEGER
-        """)
-        
-        # For each unique patient name in health_records, create/update patient entry
-        cursor.execute("SELECT DISTINCT patient FROM health_records")
-        patient_names = [row[0] for row in cursor.fetchall()]
-        
-        for patient_name in patient_names:
-            # Get or create patient
-            cursor.execute("SELECT id FROM patients WHERE name = ?", (patient_name,))
-            result = cursor.fetchone()
-            
-            if result:
-                patient_id = result[0]
-            else:
-                # Create new patient
-                cursor.execute("INSERT INTO patients (name) VALUES (?)", (patient_name,))
-                patient_id = cursor.lastrowid
-            
-            # Update health_records with patient_id
-            cursor.execute("""
-                UPDATE health_records 
-                SET patient_id = ? 
-                WHERE patient = ?
-            """, (patient_id, patient_name))
-        
-        # Drop old patient column and rename table temporarily
-        cursor.execute("""
-            CREATE TABLE health_records_new (
+            CREATE TABLE health_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TEXT NOT NULL,
                 patient_id INTEGER NOT NULL,
                 record_type TEXT NOT NULL,
-                data_type TEXT NOT NULL,
                 value TEXT NOT NULL,
+                unit TEXT,
+                lab_name TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (patient_id) REFERENCES patients(id)
             )
         """)
         
-        # Copy data
-        cursor.execute("""
-            INSERT INTO health_records_new 
-            (id, timestamp, patient_id, record_type, data_type, value, created_at)
-            SELECT id, timestamp, patient_id, record_type, data_type, value, created_at
-            FROM health_records
-        """)
-        
-        # Replace old table
-        cursor.execute("DROP TABLE health_records")
-        cursor.execute("ALTER TABLE health_records_new RENAME TO health_records")
+        conn.commit()
+        conn.close()
     
     def save_record(
         self,
         timestamp: datetime,
         patient: str,
         record_type: str,
-        data_type: str,
-        value: str
+        value: str,
+        unit: Optional[str] = None,
+        lab_name: Optional[str] = "self"
     ) -> int:
         """
         Save a health record to the database.
@@ -170,8 +82,9 @@ class Database:
             timestamp: When the record was created
             patient: Name of the patient (will be looked up to get patient_id)
             record_type: Type of record (BP, Sugar, Creatinine, Weight, Other)
-            data_type: Type of data (e.g., "text", "number", "reading")
             value: The recorded value
+            unit: Unit of measurement (optional)
+            lab_name: Name of the lab (optional, defaults to "self")
         
         Returns:
             int: The ID of the inserted record
@@ -191,14 +104,15 @@ class Database:
         
         cursor.execute("""
             INSERT INTO health_records 
-            (timestamp, patient_id, record_type, data_type, value)
-            VALUES (?, ?, ?, ?, ?)
+            (timestamp, patient_id, record_type, value, unit, lab_name)
+            VALUES (?, ?, ?, ?, ?, ?)
         """, (
             timestamp.isoformat(),
             patient_id,
             record_type,
-            data_type,
-            value
+            value,
+            unit,
+            lab_name
         ))
         
         record_id = cursor.lastrowid
@@ -229,7 +143,7 @@ class Database:
         
         # Use JOIN to get patient name from patients table
         query = """
-            SELECT hr.timestamp, p.name, hr.record_type, hr.data_type, hr.value 
+            SELECT hr.timestamp, p.name, hr.record_type, hr.value, hr.unit, hr.lab_name 
             FROM health_records hr
             INNER JOIN patients p ON hr.patient_id = p.id
             WHERE 1=1
@@ -260,8 +174,9 @@ class Database:
                 timestamp=datetime.fromisoformat(row[0]),
                 patient=row[1],  # Patient name from JOIN
                 record_type=row[2],
-                data_type=row[3],
-                value=row[4]
+                value=row[3],
+                unit=row[4],
+                lab_name=row[5] if row[5] is not None else "self"
             ))
         
         return records

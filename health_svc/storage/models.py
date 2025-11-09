@@ -13,8 +13,9 @@ class HealthRecord:
         timestamp: datetime,
         patient: str,
         record_type: str,
-        data_type: str,
-        value: str
+        value: str,
+        unit: Optional[str] = None,
+        lab_name: Optional[str] = "self"
     ):
         """
         Initialize a health record.
@@ -23,14 +24,16 @@ class HealthRecord:
             timestamp: When the record was created
             patient: Name of the patient
             record_type: Type of record (BP, Sugar, Creatinine, Weight, Other)
-            data_type: Type of data (e.g., "text", "number", "reading")
             value: The recorded value (as string to support various formats)
+            unit: Unit of measurement (optional)
+            lab_name: Name of the lab (optional, defaults to "self")
         """
         self.timestamp = timestamp
         self.patient = patient
         self.record_type = record_type
-        self.data_type = data_type
         self.value = value
+        self.unit = unit
+        self.lab_name = lab_name
     
     def to_dict(self) -> dict:
         """Convert record to dictionary for storage."""
@@ -38,8 +41,9 @@ class HealthRecord:
             "timestamp": self.timestamp.isoformat(),
             "patient": self.patient,
             "record_type": self.record_type,
-            "data_type": self.data_type,
-            "value": self.value
+            "value": self.value,
+            "unit": self.unit,
+            "lab_name": self.lab_name
         }
     
     @classmethod
@@ -49,7 +53,8 @@ class HealthRecord:
             timestamp=datetime.fromisoformat(data["timestamp"]),
             patient=data["patient"],
             record_type=data["record_type"],
-            data_type=data["data_type"],
-            value=data["value"]
+            value=data["value"],
+            unit=data.get("unit"),
+            lab_name=data.get("lab_name", "self")
         )
 

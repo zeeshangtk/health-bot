@@ -78,8 +78,9 @@ def test_app(temp_db):
             timestamp=record.timestamp,
             patient=record.patient,
             record_type=record.record_type,
-            data_type=record.data_type,
-            value=record.value
+            value=record.value,
+            unit=record.unit,
+            lab_name=record.lab_name
         )
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["message"])

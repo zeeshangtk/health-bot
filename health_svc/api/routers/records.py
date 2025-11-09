@@ -37,8 +37,9 @@ async def create_record(record: HealthRecordCreate):
     - **timestamp**: ISO format datetime when the measurement was taken
     - **patient**: Patient name (must exist in the system)
     - **record_type**: Type of measurement (e.g., 'BP', 'Weight', 'Temperature')
-    - **data_type**: Format of the data (e.g., 'text', 'number', 'json')
     - **value**: The actual measurement value
+    - **unit**: Unit of measurement (optional, e.g., 'mg/dl', 'mmHg', 'kg')
+    - **lab_name**: Name of the laboratory or facility (optional)
     
     Returns the created health record.
     Raises 400 Bad Request if the patient doesn't exist or validation fails.
@@ -47,8 +48,9 @@ async def create_record(record: HealthRecordCreate):
         timestamp=record.timestamp,
         patient=record.patient,
         record_type=record.record_type,
-        data_type=record.data_type,
-        value=record.value
+        value=record.value,
+        unit=record.unit,
+        lab_name=record.lab_name
     )
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["message"])

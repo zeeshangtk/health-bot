@@ -17,29 +17,29 @@ SAMPLE_RECORDS = [
         "timestamp": datetime(2024, 1, 15, 10, 30, 0),
         "patient": "Nazra Mastoor",
         "record_type": "BP",
-        "data_type": "text",
-        "value": "120/80"
+        "value": "120/80",
+        "unit": "mmHg"
     },
     {
         "timestamp": datetime(2024, 1, 15, 11, 0, 0),
         "patient": "Nazra Mastoor",
         "record_type": "Sugar",
-        "data_type": "text",
-        "value": "95 mg/dL"
+        "value": "95",
+        "unit": "mg/dL"
     },
     {
         "timestamp": datetime(2024, 1, 15, 10, 45, 0),
         "patient": "Asgar Ali Ansari",
         "record_type": "BP",
-        "data_type": "text",
-        "value": "130/85"
+        "value": "130/85",
+        "unit": "mmHg"
     },
     {
         "timestamp": datetime(2024, 1, 16, 9, 0, 0),
         "patient": "Asgar Ali Ansari",
         "record_type": "Weight",
-        "data_type": "text",
-        "value": "75 kg"
+        "value": "75",
+        "unit": "kg"
     },
 ]
 
@@ -72,8 +72,9 @@ def test_save_record_basic(temp_db):
         timestamp=record_data["timestamp"],
         patient=record_data["patient"],
         record_type=record_data["record_type"],
-        data_type=record_data["data_type"],
-        value=record_data["value"]
+        value=record_data["value"],
+        unit=record_data.get("unit"),
+        lab_name=record_data.get("lab_name")
     )
     
     assert record_id == 1, "First record should have ID 1"
@@ -88,8 +89,9 @@ def test_save_record_returns_incremental_ids(temp_db):
             timestamp=record_data["timestamp"],
             patient=record_data["patient"],
             record_type=record_data["record_type"],
-            data_type=record_data["data_type"],
-            value=record_data["value"]
+            value=record_data["value"],
+            unit=record_data.get("unit"),
+            lab_name=record_data.get("lab_name")
         )
         record_ids.append(record_id)
     
@@ -200,8 +202,11 @@ def test_save_and_retrieve_record_data_integrity(temp_db):
     assert retrieved.timestamp == record_data["timestamp"], "Timestamp should match"
     assert retrieved.patient == record_data["patient"], "Patient should match"
     assert retrieved.record_type == record_data["record_type"], "Record type should match"
-    assert retrieved.data_type == record_data["data_type"], "Data type should match"
     assert retrieved.value == record_data["value"], "Value should match"
+    assert retrieved.unit == record_data.get("unit"), "Unit should match"
+    # lab_name defaults to "self" if not provided
+    expected_lab_name = record_data.get("lab_name", "self")
+    assert retrieved.lab_name == expected_lab_name, "Lab name should match (defaults to 'self')"
 
 
 def test_multiple_saves_and_retrievals(temp_db):

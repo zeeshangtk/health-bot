@@ -16,16 +16,17 @@ def test_create_record_success(client):
         "timestamp": "2025-01-01T10:00:00",
         "patient": "Test Patient",
         "record_type": "BP",
-        "data_type": "text",
-        "value": "120/80"
+        "value": "120/80",
+        "unit": "mmHg"
     }
     response = client.post("/api/v1/records", json=record_data)
     assert response.status_code == 201
     data = response.json()
     assert data["patient"] == "Test Patient"
     assert data["record_type"] == "BP"
-    assert data["data_type"] == "text"
     assert data["value"] == "120/80"
+    assert data["unit"] == "mmHg"
+    assert data["lab_name"] == "self", "lab_name should default to 'self'"
     assert "timestamp" in data
 
 
@@ -35,7 +36,6 @@ def test_create_record_patient_not_found(client):
         "timestamp": "2025-01-01T10:00:00",
         "patient": "Non-existent Patient",
         "record_type": "BP",
-        "data_type": "text",
         "value": "120/80"
     }
     response = client.post("/api/v1/records", json=record_data)
@@ -51,7 +51,6 @@ def test_create_record_validation_missing_fields(client):
         json={
             "timestamp": "2025-01-01T10:00:00",
             "record_type": "BP",
-            "data_type": "text",
             "value": "120/80"
         }
     )
@@ -63,7 +62,6 @@ def test_create_record_validation_missing_fields(client):
         json={
             "patient": "Test Patient",
             "record_type": "BP",
-            "data_type": "text",
             "value": "120/80"
         }
     )
@@ -88,22 +86,22 @@ def test_get_records_all(client):
             "timestamp": "2025-01-01T10:00:00",
             "patient": "Patient A",
             "record_type": "BP",
-            "data_type": "text",
-            "value": "120/80"
+            "value": "120/80",
+            "unit": "mmHg"
         },
         {
             "timestamp": "2025-01-01T11:00:00",
             "patient": "Patient A",
             "record_type": "Sugar",
-            "data_type": "text",
-            "value": "95 mg/dL"
+            "value": "95",
+            "unit": "mg/dL"
         },
         {
             "timestamp": "2025-01-01T12:00:00",
             "patient": "Patient A",
             "record_type": "BP",
-            "data_type": "text",
-            "value": "130/85"
+            "value": "130/85",
+            "unit": "mmHg"
         },
     ]
     
@@ -132,14 +130,12 @@ def test_get_records_filter_by_patient(client):
         "timestamp": "2025-01-01T10:00:00",
         "patient": "Patient A",
         "record_type": "BP",
-        "data_type": "text",
         "value": "120/80"
     })
     client.post("/api/v1/records", json={
         "timestamp": "2025-01-01T11:00:00",
         "patient": "Patient B",
         "record_type": "BP",
-        "data_type": "text",
         "value": "130/85"
     })
     
@@ -161,21 +157,19 @@ def test_get_records_filter_by_record_type(client):
         "timestamp": "2025-01-01T10:00:00",
         "patient": "Patient A",
         "record_type": "BP",
-        "data_type": "text",
         "value": "120/80"
     })
     client.post("/api/v1/records", json={
         "timestamp": "2025-01-01T11:00:00",
         "patient": "Patient A",
         "record_type": "Sugar",
-        "data_type": "text",
-        "value": "95 mg/dL"
+        "value": "95",
+        "unit": "mg/dL"
     })
     client.post("/api/v1/records", json={
         "timestamp": "2025-01-01T12:00:00",
         "patient": "Patient A",
         "record_type": "BP",
-        "data_type": "text",
         "value": "130/85"
     })
     
@@ -198,21 +192,19 @@ def test_get_records_filter_by_patient_and_type(client):
         "timestamp": "2025-01-01T10:00:00",
         "patient": "Patient A",
         "record_type": "BP",
-        "data_type": "text",
         "value": "120/80"
     })
     client.post("/api/v1/records", json={
         "timestamp": "2025-01-01T11:00:00",
         "patient": "Patient A",
         "record_type": "Sugar",
-        "data_type": "text",
-        "value": "95 mg/dL"
+        "value": "95",
+        "unit": "mg/dL"
     })
     client.post("/api/v1/records", json={
         "timestamp": "2025-01-01T12:00:00",
         "patient": "Patient B",
         "record_type": "BP",
-        "data_type": "text",
         "value": "130/85"
     })
     
@@ -236,7 +228,6 @@ def test_get_records_limit(client):
             "timestamp": f"2025-01-01T{10+i}:00:00",
             "patient": "Patient A",
             "record_type": "BP",
-            "data_type": "text",
             "value": f"{120+i}/80"
         })
     
@@ -282,15 +273,16 @@ def test_full_workflow(client):
             "timestamp": "2025-01-01T10:00:00",
             "patient": "Workflow Patient",
             "record_type": "BP",
-            "data_type": "text",
-            "value": "120/80"
+            "value": "120/80",
+            "unit": "mmHg"
         },
         {
             "timestamp": "2025-01-01T11:00:00",
             "patient": "Workflow Patient",
             "record_type": "Sugar",
-            "data_type": "text",
-            "value": "95 mg/dL"
+            "value": "95",
+            "unit": "mg/dL",
+            "lab_name": "City Lab"
         },
     ]
     
