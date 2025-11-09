@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from config import API_HOST, API_PORT, API_RELOAD
-from api.routes import router
+from api.routers import health_router, patients_router, records_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -27,8 +27,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routes
-app.include_router(router)
+# Include routers
+app.include_router(health_router)
+app.include_router(patients_router)
+app.include_router(records_router)
 
 
 @app.on_event("startup")
