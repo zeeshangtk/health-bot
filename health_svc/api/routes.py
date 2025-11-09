@@ -3,6 +3,7 @@ FastAPI route definitions for Health Service API.
 """
 import logging
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File, status
 from typing import Optional, List
@@ -17,6 +18,7 @@ from api.schemas import (
 from services.health_service import HealthService
 from services.patient_service import PatientService
 from config import UPLOAD_DIR, UPLOAD_MAX_SIZE
+from tasks.upload_tasks import process_uploaded_file
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -263,10 +265,32 @@ async def upload_image(file: UploadFile = File(..., description="Image file to u
                 detail="Failed to save file to disk"
             )
         
+        # Queue Celery task for background processing
+        task_id = None
+        try:
+            upload_timestamp = datetime.now(timezone.utc).isoformat()
+            task = process_uploaded_file.delay(
+                filename=unique_filename,
+                file_path=str(upload_path),
+                file_size=file_size,
+                content_type=file.content_type,
+                upload_timestamp=upload_timestamp
+            )
+            task_id = task.id
+            logger.info(f"Queued background processing task {task_id} for file: {unique_filename}")
+        except Exception as e:
+            # Log error but don't fail the upload if task queuing fails
+            logger.error(
+                f"Failed to queue background processing task for {unique_filename}: {str(e)}",
+                exc_info=True
+            )
+            # Continue with response even if task queuing failed
+        
         return ImageUploadResponse(
             status="success",
             filename=unique_filename,
-            message="Image uploaded successfully"
+            message="Image uploaded successfully",
+            task_id=task_id
         )
         
     except HTTPException:

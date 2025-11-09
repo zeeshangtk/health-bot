@@ -24,8 +24,19 @@ Environment variables (with defaults):
 - `HEALTH_SVC_DB_DIR` - Database directory (default: `data`)
 - `HEALTH_SVC_DB_FILE` - Database filename (default: `health_bot.db`)
 - `HEALTH_SVC_RELOAD` - Enable auto-reload (default: `false`)
+- `HEALTH_SVC_UPLOAD_DIR` - Upload directory (default: `uploads`)
+- `HEALTH_SVC_UPLOAD_MAX_SIZE` - Max upload size in bytes (default: `10485760` = 10MB)
+- `HEALTH_SVC_REDIS_URL` - Redis connection URL (default: `redis://localhost:6379`)
+- `HEALTH_SVC_REDIS_DB` - Redis database number (default: `0`)
+- `HEALTH_SVC_CELERY_TASK_SERIALIZER` - Task serializer (default: `json`)
+- `HEALTH_SVC_CELERY_RESULT_SERIALIZER` - Result serializer (default: `json`)
+- `HEALTH_SVC_CELERY_ACCEPT_CONTENT` - Accepted content types (default: `json`)
+- `HEALTH_SVC_CELERY_TIMEZONE` - Timezone for tasks (default: `UTC`)
+- `HEALTH_SVC_CELERY_ENABLE_UTC` - Enable UTC (default: `true`)
 
 ### Running the Server
+
+#### Basic Setup (Without Background Tasks)
 
 ```bash
 # Start the API server
@@ -34,6 +45,41 @@ python main.py
 # Or using uvicorn directly
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+#### Full Setup (With Celery Background Tasks)
+
+For full functionality including background processing of uploaded files:
+
+1. **Start Redis** (required for Celery):
+   ```bash
+   # Using Docker (recommended)
+   docker run -d -p 6379:6379 redis
+   
+   # Or install and run locally
+   redis-server
+   ```
+
+2. **Start Celery Worker** (processes background tasks):
+   ```bash
+   # From the health_svc directory
+   celery -A celery_app worker --loglevel=info
+   ```
+
+3. **Start Flower** (optional, for monitoring):
+   ```bash
+   # From the health_svc directory
+   celery -A celery_app flower --port=5555
+   ```
+   Then access Flower UI at: http://localhost:5555
+
+4. **Start FastAPI Server**:
+   ```bash
+   python main.py
+   # Or
+   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+
+**Note**: The API will work without Redis/Celery, but background processing tasks will not be queued. File uploads will still succeed, but the `task_id` in the response will be `null`.
 
 ## 📚 Interactive API Documentation
 
@@ -96,6 +142,21 @@ Swagger UI provides an interactive interface where you can:
     - `record_type` (optional): Filter by record type (e.g., "BP", "Weight")
     - `limit` (optional): Maximum number of results (1-1000)
   - Returns: Array of health record objects
+
+- **POST /api/v1/records/upload** - Upload an image file
+  - Request: Multipart form data with image file (JPEG, PNG, GIF, or BMP)
+  - Maximum file size: 10MB
+  - Returns: Upload status, filename, and optional task_id for background processing
+  - Example response:
+    ```json
+    {
+      "status": "success",
+      "filename": "a1b2c3d4-e5f6-7890-abcd-ef1234567890.jpg",
+      "message": "Image uploaded successfully",
+      "task_id": "abc123-task-id"
+    }
+    ```
+  - The `task_id` is included when Celery is configured and the background processing task is successfully queued
 
 ## 🧪 Testing Endpoints
 
@@ -215,9 +276,13 @@ health_svc/
 ├── storage/               # Database layer
 │   ├── database.py       # Database connection and operations
 │   └── models.py         # SQLAlchemy models
+├── tasks/                 # Celery background tasks
+│   ├── __init__.py       # Tasks module initialization
+│   └── upload_tasks.py   # File upload processing tasks
 ├── tests/                # Unit tests
 ├── main.py               # FastAPI application entry point
 ├── config.py             # Configuration management
+├── celery_app.py         # Celery application instance
 ├── migrate_db.py         # Database migration script
 └── requirements.txt      # Python dependencies
 ```
@@ -240,11 +305,44 @@ The project follows Python best practices:
 4. Add tests in `tests/test_api.py`
 5. Test in Swagger UI at `/docs`
 
+## 🔄 Background Processing
+
+The service uses Celery for asynchronous background processing of uploaded files. After a file is successfully saved to disk, a background task is queued for post-processing.
+
+### Task Processing
+
+The `process_uploaded_file` task performs:
+- File validation and verification
+- Metadata extraction (can be extended)
+- Logging of upload events
+- Error handling with automatic retries (up to 3 attempts with exponential backoff)
+
+### Monitoring Tasks
+
+Use Flower to monitor task execution:
+- Access Flower UI at http://localhost:5555 (when running)
+- View task status, execution time, and results
+- Monitor worker health and task queues
+- Debug failed tasks and retries
+
+### Task Status
+
+You can check task status using the task_id returned in the upload response:
+```python
+from celery_app import celery_app
+
+# Get task result
+task = celery_app.AsyncResult(task_id)
+print(task.state)  # PENDING, SUCCESS, FAILURE, etc.
+print(task.result)  # Task result when completed
+```
+
 ## 🔒 Security Notes
 
 - CORS is configured to allow all origins (configure for production)
 - No authentication is currently implemented (add for production)
 - Database uses SQLite (consider PostgreSQL for production)
+- Redis should be secured in production (use password authentication)
 - Never commit sensitive data or tokens to version control
 
 ## 📝 License

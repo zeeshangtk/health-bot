@@ -24,3 +24,21 @@ UPLOAD_MAX_SIZE = int(os.getenv("HEALTH_SVC_UPLOAD_MAX_SIZE", "10485760"))  # 10
 # Ensure upload directory exists
 Path(UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
 
+# Celery and Redis Configuration
+REDIS_URL = os.getenv("HEALTH_SVC_REDIS_URL", "redis://localhost:6379")
+REDIS_DB = int(os.getenv("HEALTH_SVC_REDIS_DB", "0"))
+
+# Build Redis connection string with database selection
+if REDIS_DB > 0:
+    CELERY_BROKER_URL = f"{REDIS_URL}/{REDIS_DB}"
+    CELERY_RESULT_BACKEND = f"{REDIS_URL}/{REDIS_DB}"
+else:
+    CELERY_BROKER_URL = f"{REDIS_URL}/0"
+    CELERY_RESULT_BACKEND = f"{REDIS_URL}/0"
+
+CELERY_TASK_SERIALIZER = os.getenv("HEALTH_SVC_CELERY_TASK_SERIALIZER", "json")
+CELERY_RESULT_SERIALIZER = os.getenv("HEALTH_SVC_CELERY_RESULT_SERIALIZER", "json")
+CELERY_ACCEPT_CONTENT = os.getenv("HEALTH_SVC_CELERY_ACCEPT_CONTENT", "json").split(",")
+CELERY_TIMEZONE = os.getenv("HEALTH_SVC_CELERY_TIMEZONE", "UTC")
+CELERY_ENABLE_UTC = os.getenv("HEALTH_SVC_CELERY_ENABLE_UTC", "true").lower() == "true"
+

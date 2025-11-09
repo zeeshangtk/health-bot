@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, status
 from api.routes import router, upload_image
 from api.schemas import ImageUploadResponse
 from config import UPLOAD_DIR, UPLOAD_MAX_SIZE
+from tasks.upload_tasks import process_uploaded_file
 
 
 @pytest.fixture
@@ -78,10 +79,15 @@ def test_upload_image_success_jpeg(client, temp_upload_dir):
     image_data = create_test_image("jpeg", 1024)
     image_data.seek(0)
     
-    response = client.post(
-        "/api/v1/records/upload",
-        files={"file": ("test.jpg", image_data, "image/jpeg")}
-    )
+    # Mock Celery task
+    mock_task = MagicMock()
+    mock_task.id = "test-task-id-123"
+    
+    with patch('api.routes.process_uploaded_file.delay', return_value=mock_task):
+        response = client.post(
+            "/api/v1/records/upload",
+            files={"file": ("test.jpg", image_data, "image/jpeg")}
+        )
     
     assert response.status_code == 201
     data = response.json()
@@ -89,6 +95,7 @@ def test_upload_image_success_jpeg(client, temp_upload_dir):
     assert data["message"] == "Image uploaded successfully"
     assert data["filename"].endswith(".jpg")
     assert len(data["filename"]) > 4  # UUID + extension
+    assert data["task_id"] == "test-task-id-123"
     
     # Verify file was saved
     upload_path = Path(temp_upload_dir)
@@ -102,15 +109,21 @@ def test_upload_image_success_png(client, temp_upload_dir):
     image_data = create_test_image("png", 2048)
     image_data.seek(0)
     
-    response = client.post(
-        "/api/v1/records/upload",
-        files={"file": ("test.png", image_data, "image/png")}
-    )
+    # Mock Celery task
+    mock_task = MagicMock()
+    mock_task.id = "test-task-id-456"
+    
+    with patch('api.routes.process_uploaded_file.delay', return_value=mock_task):
+        response = client.post(
+            "/api/v1/records/upload",
+            files={"file": ("test.png", image_data, "image/png")}
+        )
     
     assert response.status_code == 201
     data = response.json()
     assert data["status"] == "success"
     assert data["filename"].endswith(".png")
+    assert data["task_id"] == "test-task-id-456"
 
 
 def test_upload_image_success_gif(client, temp_upload_dir):
@@ -118,15 +131,21 @@ def test_upload_image_success_gif(client, temp_upload_dir):
     image_data = create_test_image("gif", 512)
     image_data.seek(0)
     
-    response = client.post(
-        "/api/v1/records/upload",
-        files={"file": ("test.gif", image_data, "image/gif")}
-    )
+    # Mock Celery task
+    mock_task = MagicMock()
+    mock_task.id = "test-task-id-gif"
+    
+    with patch('api.routes.process_uploaded_file.delay', return_value=mock_task):
+        response = client.post(
+            "/api/v1/records/upload",
+            files={"file": ("test.gif", image_data, "image/gif")}
+        )
     
     assert response.status_code == 201
     data = response.json()
     assert data["status"] == "success"
     assert data["filename"].endswith(".gif")
+    assert data["task_id"] == "test-task-id-gif"
 
 
 def test_upload_image_success_bmp(client, temp_upload_dir):
@@ -134,15 +153,21 @@ def test_upload_image_success_bmp(client, temp_upload_dir):
     image_data = create_test_image("bmp", 1024)
     image_data.seek(0)
     
-    response = client.post(
-        "/api/v1/records/upload",
-        files={"file": ("test.bmp", image_data, "image/bmp")}
-    )
+    # Mock Celery task
+    mock_task = MagicMock()
+    mock_task.id = "test-task-id-bmp"
+    
+    with patch('api.routes.process_uploaded_file.delay', return_value=mock_task):
+        response = client.post(
+            "/api/v1/records/upload",
+            files={"file": ("test.bmp", image_data, "image/bmp")}
+        )
     
     assert response.status_code == 201
     data = response.json()
     assert data["status"] == "success"
     assert data["filename"].endswith(".bmp")
+    assert data["task_id"] == "test-task-id-bmp"
 
 
 def test_upload_image_unique_filenames(client, temp_upload_dir):
@@ -152,14 +177,21 @@ def test_upload_image_unique_filenames(client, temp_upload_dir):
     image_data2 = create_test_image("jpeg", 1024)
     image_data2.seek(0)
     
-    response1 = client.post(
-        "/api/v1/records/upload",
-        files={"file": ("test1.jpg", image_data1, "image/jpeg")}
-    )
-    response2 = client.post(
-        "/api/v1/records/upload",
-        files={"file": ("test2.jpg", image_data2, "image/jpeg")}
-    )
+    # Mock Celery task
+    mock_task1 = MagicMock()
+    mock_task1.id = "task-1"
+    mock_task2 = MagicMock()
+    mock_task2.id = "task-2"
+    
+    with patch('api.routes.process_uploaded_file.delay', side_effect=[mock_task1, mock_task2]):
+        response1 = client.post(
+            "/api/v1/records/upload",
+            files={"file": ("test1.jpg", image_data1, "image/jpeg")}
+        )
+        response2 = client.post(
+            "/api/v1/records/upload",
+            files={"file": ("test2.jpg", image_data2, "image/jpeg")}
+        )
     
     assert response1.status_code == 201
     assert response2.status_code == 201
@@ -279,13 +311,19 @@ def test_upload_file_at_max_size(client, temp_upload_dir):
     max_size_data = BytesIO(b'\xFF\xD8\xFF\xE0' + b'\x00' * (UPLOAD_MAX_SIZE - 4))
     max_size_data.seek(0)
     
-    response = client.post(
-        "/api/v1/records/upload",
-        files={"file": ("max.jpg", max_size_data, "image/jpeg")}
-    )
+    # Mock Celery task
+    mock_task = MagicMock()
+    mock_task.id = "test-task-id-max"
+    
+    with patch('api.routes.process_uploaded_file.delay', return_value=mock_task):
+        response = client.post(
+            "/api/v1/records/upload",
+            files={"file": ("max.jpg", max_size_data, "image/jpeg")}
+        )
     assert response.status_code == 201
     data = response.json()
     assert data["status"] == "success"
+    assert data["task_id"] == "test-task-id-max"
 
 
 def test_upload_file_write_failure(client, temp_upload_dir):
@@ -308,36 +346,47 @@ def test_upload_jpeg_with_jpeg_extension(client, temp_upload_dir):
     image_data = create_test_image("jpeg", 1024)
     image_data.seek(0)
     
-    response = client.post(
-        "/api/v1/records/upload",
-        files={"file": ("test.jpeg", image_data, "image/jpeg")}
-    )
+    # Mock Celery task
+    mock_task = MagicMock()
+    mock_task.id = "test-task-id-jpeg-ext"
+    
+    with patch('api.routes.process_uploaded_file.delay', return_value=mock_task):
+        response = client.post(
+            "/api/v1/records/upload",
+            files={"file": ("test.jpeg", image_data, "image/jpeg")}
+        )
     
     assert response.status_code == 201
     data = response.json()
     assert data["filename"].endswith(".jpeg")
+    assert data["task_id"] == "test-task-id-jpeg-ext"
 
 
 # Integration Tests
 def test_upload_integration_full_workflow(client, temp_upload_dir):
     """Test complete upload workflow including file storage and cleanup."""
+    # Mock Celery tasks
+    mock_tasks = [MagicMock(id=f"task-{i}") for i in range(3)]
+    
     # Upload multiple files
     files_uploaded = []
-    for i, format in enumerate(["jpeg", "png", "gif"]):
-        image_data = create_test_image(format, 1024)
-        image_data.seek(0)
-        
-        filename = f"test_{i}.{format if format != 'jpeg' else 'jpg'}"
-        content_type = f"image/{format if format != 'jpeg' else 'jpeg'}"
-        
-        response = client.post(
-            "/api/v1/records/upload",
-            files={"file": (filename, image_data, content_type)}
-        )
-        
-        assert response.status_code == 201
-        data = response.json()
-        files_uploaded.append(data["filename"])
+    with patch('api.routes.process_uploaded_file.delay', side_effect=mock_tasks):
+        for i, format in enumerate(["jpeg", "png", "gif"]):
+            image_data = create_test_image(format, 1024)
+            image_data.seek(0)
+            
+            filename = f"test_{i}.{format if format != 'jpeg' else 'jpg'}"
+            content_type = f"image/{format if format != 'jpeg' else 'jpeg'}"
+            
+            response = client.post(
+                "/api/v1/records/upload",
+                files={"file": (filename, image_data, content_type)}
+            )
+            
+            assert response.status_code == 201
+            data = response.json()
+            files_uploaded.append(data["filename"])
+            assert data["task_id"] == f"task-{i}"
     
     # Verify all files were saved
     upload_path = Path(temp_upload_dir)
@@ -354,10 +403,15 @@ def test_upload_response_schema(client, temp_upload_dir):
     image_data = create_test_image("jpeg", 1024)
     image_data.seek(0)
     
-    response = client.post(
-        "/api/v1/records/upload",
-        files={"file": ("test.jpg", image_data, "image/jpeg")}
-    )
+    # Mock Celery task
+    mock_task = MagicMock()
+    mock_task.id = "test-task-id-schema"
+    
+    with patch('api.routes.process_uploaded_file.delay', return_value=mock_task):
+        response = client.post(
+            "/api/v1/records/upload",
+            files={"file": ("test.jpg", image_data, "image/jpeg")}
+        )
     
     assert response.status_code == 201
     data = response.json()
@@ -366,14 +420,20 @@ def test_upload_response_schema(client, temp_upload_dir):
     assert "status" in data
     assert "filename" in data
     assert "message" in data
+    assert "task_id" in data
     assert data["status"] == "success"
     assert isinstance(data["filename"], str)
     assert isinstance(data["message"], str)
+    assert isinstance(data["task_id"], str)
 
 
 def test_upload_concurrent_uploads(client, temp_upload_dir):
     """Test handling of concurrent uploads."""
     import concurrent.futures
+    
+    # Mock Celery task
+    task_ids = [f"task-{i}" for i in range(5)]
+    mock_tasks = [MagicMock(id=tid) for tid in task_ids]
     
     def upload_one():
         image_data = create_test_image("jpeg", 1024)
@@ -385,9 +445,10 @@ def test_upload_concurrent_uploads(client, temp_upload_dir):
         return response.status_code == 201
     
     # Upload 5 files concurrently
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(upload_one) for _ in range(5)]
-        results = [f.result() for f in concurrent.futures.as_completed(futures)]
+    with patch('api.routes.process_uploaded_file.delay', side_effect=mock_tasks):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(upload_one) for _ in range(5)]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
     
     # All should succeed
     assert all(results)
@@ -400,4 +461,94 @@ def test_upload_concurrent_uploads(client, temp_upload_dir):
     # Verify all filenames are unique
     filenames = [f.name for f in saved_files]
     assert len(filenames) == len(set(filenames))
+
+
+# Celery Task Queuing Tests
+def test_upload_task_queued_with_correct_parameters(client, temp_upload_dir):
+    """Test that Celery task is queued with correct parameters."""
+    image_data = create_test_image("jpeg", 1024)
+    image_data.seek(0)
+    
+    # Mock Celery task
+    mock_task = MagicMock()
+    mock_task.id = "test-task-params"
+    
+    with patch('api.routes.process_uploaded_file.delay', return_value=mock_task) as mock_delay:
+        response = client.post(
+            "/api/v1/records/upload",
+            files={"file": ("test.jpg", image_data, "image/jpeg")}
+        )
+    
+    assert response.status_code == 201
+    data = response.json()
+    
+    # Verify task was called
+    assert mock_delay.called
+    
+    # Verify task was called with correct parameters
+    call_args = mock_delay.call_args
+    assert call_args is not None
+    
+    # Check keyword arguments
+    kwargs = call_args.kwargs
+    assert "filename" in kwargs
+    assert "file_path" in kwargs
+    assert "file_size" in kwargs
+    assert "content_type" in kwargs
+    assert "upload_timestamp" in kwargs
+    
+    # Verify values
+    assert kwargs["filename"] == data["filename"]
+    assert kwargs["file_size"] == 1024
+    assert kwargs["content_type"] == "image/jpeg"
+    assert isinstance(kwargs["upload_timestamp"], str)  # ISO format timestamp
+
+
+def test_upload_task_queuing_failure_does_not_fail_upload(client, temp_upload_dir):
+    """Test that upload succeeds even if task queuing fails."""
+    image_data = create_test_image("jpeg", 1024)
+    image_data.seek(0)
+    
+    # Mock Celery task to raise an exception
+    with patch('api.routes.process_uploaded_file.delay', side_effect=Exception("Redis connection failed")):
+        response = client.post(
+            "/api/v1/records/upload",
+            files={"file": ("test.jpg", image_data, "image/jpeg")}
+        )
+    
+    # Upload should still succeed
+    assert response.status_code == 201
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["filename"].endswith(".jpg")
+    
+    # Task ID should be None when queuing fails
+    assert data["task_id"] is None
+    
+    # Verify file was still saved
+    upload_path = Path(temp_upload_dir)
+    saved_files = list(upload_path.glob("*.jpg"))
+    assert len(saved_files) == 1
+    assert saved_files[0].name == data["filename"]
+
+
+def test_upload_task_id_in_response_when_queued(client, temp_upload_dir):
+    """Test that task_id is included in response when task is successfully queued."""
+    image_data = create_test_image("jpeg", 1024)
+    image_data.seek(0)
+    
+    # Mock Celery task
+    mock_task = MagicMock()
+    mock_task.id = "abc123-task-id"
+    
+    with patch('api.routes.process_uploaded_file.delay', return_value=mock_task):
+        response = client.post(
+            "/api/v1/records/upload",
+            files={"file": ("test.jpg", image_data, "image/jpeg")}
+        )
+    
+    assert response.status_code == 201
+    data = response.json()
+    assert data["task_id"] == "abc123-task-id"
+    assert data["task_id"] is not None
 
