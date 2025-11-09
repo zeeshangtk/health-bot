@@ -3,12 +3,15 @@ Database/storage implementation for health records.
 """
 import os
 import sqlite3
+import logging
 from datetime import datetime
 from typing import Optional, List
 from pathlib import Path
 
 from config import DATABASE_DIR, DATABASE_PATH
 from storage.models import HealthRecord
+
+logger = logging.getLogger(__name__)
 
 
 class Database:
@@ -239,6 +242,91 @@ class Database:
             }
             for row in rows
         ]
+    
+    def save_lab_report_records(
+        self,
+        patient_name: str,
+        timestamp: datetime,
+        lab_name: str,
+        test_results: List[dict]
+    ) -> List[int]:
+        """
+        Save multiple health records from a lab report atomically (all or nothing).
+        
+        This method ensures that either all test results are saved or none are saved.
+        The patient must exist in the database; if not, the operation will fail.
+        
+        Args:
+            patient_name: Name of the patient (must exist in database)
+            timestamp: When the sample was collected (used for all records)
+            lab_name: Name of the laboratory/hospital
+            test_results: List of test result dictionaries with keys:
+                - test_name: Name of the test (maps to record_type)
+                - results: Test result value (maps to value)
+                - unit: Unit of measurement (maps to unit)
+        
+        Returns:
+            List[int]: List of inserted record IDs
+        
+        Raises:
+            ValueError: If patient is not found in database
+            sqlite3.Error: If database transaction fails
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA foreign_keys = ON")
+        cursor = conn.cursor()
+        
+        try:
+            # Start transaction
+            cursor.execute("BEGIN TRANSACTION")
+            
+            # Get patient - must exist, fail if not found
+            cursor.execute("SELECT id FROM patients WHERE name = ?", (patient_name,))
+            result = cursor.fetchone()
+            
+            if not result:
+                raise ValueError(f"Patient '{patient_name}' not found in database")
+            
+            patient_id = result[0]
+            
+            # Prepare all records for batch insert
+            record_ids = []
+            timestamp_iso = timestamp.isoformat()
+            
+            for test_result in test_results:
+                cursor.execute("""
+                    INSERT INTO health_records 
+                    (timestamp, patient_id, record_type, value, unit, lab_name)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    timestamp_iso,
+                    patient_id,
+                    test_result["test_name"],
+                    test_result["results"],
+                    test_result.get("unit"),
+                    lab_name
+                ))
+                record_ids.append(cursor.lastrowid)
+            
+            # Commit transaction (all or nothing)
+            conn.commit()
+            logger.info(
+                f"Successfully saved {len(record_ids)} lab report records "
+                f"for patient '{patient_name}' atomically"
+            )
+            
+            return record_ids
+            
+        except Exception as e:
+            # Rollback on any error
+            conn.rollback()
+            logger.error(
+                f"Error saving lab report records for patient '{patient_name}': {str(e)}. "
+                "Transaction rolled back."
+            )
+            raise
+        finally:
+            conn.close()
 
 
 # Global database instance

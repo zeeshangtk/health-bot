@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List
 from pydantic import BaseModel, Field
 from celery_app import celery_app
+from storage.database import get_database
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,30 @@ class LabReport(BaseModel):
     hospital_info: HospitalInfo = Field(..., description="Hospital information")
     patient_info: PatientInfo = Field(..., description="Patient information")
     results: List[TestResult] = Field(..., description="List of test results")
+
+
+def parse_sample_date(date_str: str) -> datetime:
+    """
+    Parse sample date string from lab report format to datetime.
+    
+    Expected format: "DD-MM-YYYY HH:MM AM/PM"
+    Example: "08-11-2025 03:17 PM"
+    
+    Args:
+        date_str: Date string in format "DD-MM-YYYY HH:MM AM/PM"
+    
+    Returns:
+        datetime: Parsed datetime object
+    
+    Raises:
+        ValueError: If date string cannot be parsed
+    """
+    try:
+        # Parse format: "DD-MM-YYYY HH:MM AM/PM"
+        return datetime.strptime(date_str, "%d-%m-%Y %I:%M %p")
+    except ValueError as e:
+        logger.error(f"Failed to parse sample date '{date_str}': {str(e)}")
+        raise ValueError(f"Invalid date format: {date_str}. Expected format: DD-MM-YYYY HH:MM AM/PM") from e
 
 
 def get_sample_lab_report() -> dict:
@@ -227,7 +252,49 @@ def process_uploaded_file(self, filename, file_path, file_size, content_type, up
         lab_report = get_sample_lab_report()
         logger.info(f"Generated sample lab report for file: {filename}")
         
-        # For now, we'll just log the successful processing
+        # Store lab report records in database atomically
+        records_saved = 0
+        try:
+            # Parse the lab report structure
+            lab_report_obj = LabReport(**lab_report)
+            
+            # Parse sample date to datetime
+            sample_timestamp = parse_sample_date(lab_report_obj.patient_info.sample_date)
+            
+            # Extract test results as list of dictionaries
+            test_results = [
+                {
+                    "test_name": result.test_name,
+                    "results": result.results,
+                    "unit": result.unit
+                }
+                for result in lab_report_obj.results
+            ]
+            
+            # Get database instance and save all records atomically
+            db = get_database()
+            record_ids = db.save_lab_report_records(
+                patient_name=lab_report_obj.patient_info.patient_name,
+                timestamp=sample_timestamp,
+                lab_name=lab_report_obj.hospital_info.hospital_name,
+                test_results=test_results
+            )
+            
+            records_saved = len(record_ids)
+            logger.info(
+                f"Successfully stored {records_saved} health records "
+                f"from lab report for file: {filename}"
+            )
+            
+        except Exception as e:
+            logger.error(
+                f"Failed to store lab report records for file {filename}: {str(e)}",
+                exc_info=True
+            )
+            # Re-raise to trigger retry mechanism
+            raise
+        
+        # Log successful processing
         processed_at = datetime.now(timezone.utc).isoformat()
         logger.info(f"Successfully processed file: {filename} at {processed_at}")
         
@@ -239,7 +306,8 @@ def process_uploaded_file(self, filename, file_path, file_size, content_type, up
             "content_type": content_type,
             "upload_timestamp": upload_timestamp,
             "processed_at": processed_at,
-            "lab_report": lab_report
+            "lab_report": lab_report,
+            "records_saved": records_saved
         }
         
     except FileNotFoundError as exc:
