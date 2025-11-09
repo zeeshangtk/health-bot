@@ -12,32 +12,57 @@ from fastapi.testclient import TestClient
 from fastapi import FastAPI, UploadFile, File
 from fastapi import APIRouter, HTTPException, status
 
-from api.routes import router, upload_image
 from api.schemas import ImageUploadResponse
 from config import UPLOAD_DIR, UPLOAD_MAX_SIZE
 from tasks.upload_tasks import process_uploaded_file
+from services.upload_service import UploadService
 
 
 @pytest.fixture
 def temp_upload_dir():
     """Create a temporary upload directory for testing."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Patch the service instance's upload_dir to use temporary directory
-        from api.routes import upload_service
-        original_upload_dir = upload_service.upload_dir
-        upload_service.upload_dir = Path(tmpdir)
-        upload_service.upload_dir.mkdir(parents=True, exist_ok=True)
+        # Create a test upload service with temporary directory
+        test_upload_service = UploadService()
+        original_upload_dir = test_upload_service.upload_dir
+        test_upload_service.upload_dir = Path(tmpdir)
+        test_upload_service.upload_dir.mkdir(parents=True, exist_ok=True)
         try:
-            yield tmpdir
+            yield tmpdir, test_upload_service
         finally:
-            upload_service.upload_dir = original_upload_dir
+            test_upload_service.upload_dir = original_upload_dir
 
 
 @pytest.fixture
-def test_app():
+def test_app(temp_upload_dir):
     """Create a FastAPI test app with upload endpoint."""
+    tmpdir, test_upload_service = temp_upload_dir
+    
     app = FastAPI(title="Health Service API Test")
-    app.include_router(router)
+    
+    # Create test router with test upload service
+    from fastapi import APIRouter, UploadFile, File
+    from api.schemas import ImageUploadResponse
+    
+    records_router = APIRouter(prefix="/api/v1/records", tags=["Health Records"])
+    
+    @records_router.post(
+        "/upload",
+        response_model=ImageUploadResponse,
+        status_code=201
+    )
+    async def upload_image(file: UploadFile = File(...)):
+        """Upload an image file."""
+        unique_filename, file_path, task_id = await test_upload_service.save_uploaded_file(file)
+        
+        return ImageUploadResponse(
+            status="success",
+            filename=unique_filename,
+            message="Image uploaded successfully",
+            task_id=task_id
+        )
+    
+    app.include_router(records_router)
     return app
 
 
@@ -80,6 +105,7 @@ def create_test_image(format: str = "jpeg", size: int = 1024) -> BytesIO:
 # Success Case Tests
 def test_upload_image_success_jpeg(client, temp_upload_dir):
     """Test successful JPEG image upload."""
+    tmpdir, _ = temp_upload_dir
     image_data = create_test_image("jpeg", 1024)
     image_data.seek(0)
     
@@ -102,7 +128,7 @@ def test_upload_image_success_jpeg(client, temp_upload_dir):
     assert data["task_id"] == "test-task-id-123"
     
     # Verify file was saved
-    upload_path = Path(temp_upload_dir)
+    upload_path = Path(tmpdir)
     saved_files = list(upload_path.glob("*.jpg"))
     assert len(saved_files) == 1
     assert saved_files[0].name == data["filename"]
@@ -176,6 +202,7 @@ def test_upload_image_success_bmp(client, temp_upload_dir):
 
 def test_upload_image_unique_filenames(client, temp_upload_dir):
     """Test that multiple uploads generate unique filenames."""
+    tmpdir, _ = temp_upload_dir
     image_data1 = create_test_image("jpeg", 1024)
     image_data1.seek(0)
     image_data2 = create_test_image("jpeg", 1024)
@@ -206,7 +233,7 @@ def test_upload_image_unique_filenames(client, temp_upload_dir):
     assert filename1 != filename2
     
     # Verify both files exist
-    upload_path = Path(temp_upload_dir)
+    upload_path = Path(tmpdir)
     saved_files = list(upload_path.glob("*.jpg"))
     assert len(saved_files) == 2
 
@@ -369,6 +396,7 @@ def test_upload_jpeg_with_jpeg_extension(client, temp_upload_dir):
 # Integration Tests
 def test_upload_integration_full_workflow(client, temp_upload_dir):
     """Test complete upload workflow including file storage and cleanup."""
+    tmpdir, _ = temp_upload_dir
     # Mock Celery tasks
     mock_tasks = [MagicMock(id=f"task-{i}") for i in range(3)]
     
@@ -393,7 +421,7 @@ def test_upload_integration_full_workflow(client, temp_upload_dir):
             assert data["task_id"] == f"task-{i}"
     
     # Verify all files were saved
-    upload_path = Path(temp_upload_dir)
+    upload_path = Path(tmpdir)
     saved_files = [f.name for f in upload_path.iterdir() if f.is_file()]
     assert len(saved_files) == 3
     
@@ -433,6 +461,7 @@ def test_upload_response_schema(client, temp_upload_dir):
 
 def test_upload_concurrent_uploads(client, temp_upload_dir):
     """Test handling of concurrent uploads."""
+    tmpdir, _ = temp_upload_dir
     import concurrent.futures
     
     # Mock Celery task
@@ -458,7 +487,7 @@ def test_upload_concurrent_uploads(client, temp_upload_dir):
     assert all(results)
     
     # Verify all files were saved with unique names
-    upload_path = Path(temp_upload_dir)
+    upload_path = Path(tmpdir)
     saved_files = list(upload_path.glob("*.jpg"))
     assert len(saved_files) == 5
     
@@ -510,6 +539,7 @@ def test_upload_task_queued_with_correct_parameters(client, temp_upload_dir):
 
 def test_upload_task_queuing_failure_does_not_fail_upload(client, temp_upload_dir):
     """Test that upload succeeds even if task queuing fails."""
+    tmpdir, _ = temp_upload_dir
     image_data = create_test_image("jpeg", 1024)
     image_data.seek(0)
     
@@ -530,7 +560,7 @@ def test_upload_task_queuing_failure_does_not_fail_upload(client, temp_upload_di
     assert data["task_id"] is None
     
     # Verify file was still saved
-    upload_path = Path(temp_upload_dir)
+    upload_path = Path(tmpdir)
     saved_files = list(upload_path.glob("*.jpg"))
     assert len(saved_files) == 1
     assert saved_files[0].name == data["filename"]

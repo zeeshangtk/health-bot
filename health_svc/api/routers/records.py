@@ -1,0 +1,122 @@
+"""
+Records router - health record and image upload endpoints.
+"""
+import logging
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File
+from typing import Optional, List
+
+from api.schemas import (
+    HealthRecordCreate,
+    HealthRecordResponse,
+    ImageUploadResponse
+)
+from services.health_service import HealthService
+from services.upload_service import UploadService
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/v1/records", tags=["Health Records"])
+
+# Initialize services
+health_service = HealthService()
+upload_service = UploadService()
+
+
+@router.post(
+    "",
+    response_model=HealthRecordResponse,
+    status_code=201,
+    summary="Create a new health record",
+    description="Add a new health measurement record for a patient. Supports various record types like blood pressure, weight, temperature, etc."
+)
+async def create_record(record: HealthRecordCreate):
+    """
+    Create a new health record.
+    
+    - **timestamp**: ISO format datetime when the measurement was taken
+    - **patient**: Patient name (must exist in the system)
+    - **record_type**: Type of measurement (e.g., 'BP', 'Weight', 'Temperature')
+    - **data_type**: Format of the data (e.g., 'text', 'number', 'json')
+    - **value**: The actual measurement value
+    
+    Returns the created health record.
+    Raises 400 Bad Request if the patient doesn't exist or validation fails.
+    """
+    result = health_service.save_record(
+        timestamp=record.timestamp,
+        patient=record.patient,
+        record_type=record.record_type,
+        data_type=record.data_type,
+        value=record.value
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result["record"]
+
+
+@router.get(
+    "",
+    response_model=List[HealthRecordResponse],
+    summary="List health records",
+    description="Retrieve health records with optional filtering by patient name, record type, and result limit."
+)
+async def list_records(
+    patient: Optional[str] = Query(None, description="Filter by patient name (exact match)", example="John Doe"),
+    record_type: Optional[str] = Query(None, description="Filter by record type (e.g., 'BP', 'Weight')", example="BP"),
+    limit: Optional[int] = Query(None, ge=1, le=1000, description="Maximum number of records to return (1-1000)", example=10)
+):
+    """
+    Get health records with optional filters.
+    
+    Query Parameters:
+    - **patient**: Filter records by patient name (optional, exact match)
+    - **record_type**: Filter records by type (optional, e.g., 'BP', 'Weight', 'Temperature')
+    - **limit**: Maximum number of records to return (optional, 1-1000)
+    
+    Returns a list of health records matching the filters.
+    If no filters are provided, returns all records (up to the limit if specified).
+    """
+    records = health_service.get_records(
+        patient=patient,
+        record_type=record_type,
+        limit=limit
+    )
+    return records
+
+
+@router.post(
+    "/upload",
+    response_model=ImageUploadResponse,
+    status_code=201,
+    summary="Upload an image file",
+    description="Upload a single image file (JPEG, PNG, GIF, or BMP) via multipart/form-data. "
+                "The image will be stored in the uploads directory with a unique filename. "
+                "Maximum file size is 10MB."
+)
+async def upload_image(file: UploadFile = File(..., description="Image file to upload (JPEG, PNG, GIF, or BMP)")):
+    """
+    Upload an image file.
+    
+    - **file**: Image file to upload (required, must be JPEG, PNG, GIF, or BMP format)
+    
+    The uploaded file will be stored in the uploads directory with a unique UUID-based filename
+    to avoid conflicts. The original file extension is preserved.
+    
+    Returns the stored filename and success message.
+    
+    Raises:
+    - 400 Bad Request: If no file is uploaded, file is not an image, or file size exceeds 10MB
+    - 413 Payload Too Large: If the file size exceeds the maximum allowed size
+    - 415 Unsupported Media Type: If the upload is not multipart/form-data
+    - 500 Internal Server Error: For file system write failures
+    """
+    unique_filename, file_path, task_id = await upload_service.save_uploaded_file(file)
+    
+    return ImageUploadResponse(
+        status="success",
+        filename=unique_filename,
+        message="Image uploaded successfully",
+        task_id=task_id
+    )
+
