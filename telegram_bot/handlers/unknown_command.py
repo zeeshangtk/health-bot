@@ -75,28 +75,34 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
                 )
                 break
     
-    # In group chats, only respond to commands or when bot is mentioned
+    # In group chats, only respond to commands or when bot is mentioned at the start
     if is_group:
-        # Check if bot is mentioned in the message
+        # Check if bot is mentioned in the message (only at the start or as part of command)
         bot_mentioned = False
         if update.message.entities:
             bot_username = context.bot.username if context.bot.username else None
             bot_id = context.bot.id
             
             for entity in update.message.entities:
-                # Check for @username mentions
+                # Check for @username mentions - only if at start of message (offset 0)
+                # or if it's part of a command context
                 if entity.type == "mention" and bot_username:
                     mention_text = message_text[entity.offset:entity.offset + entity.length]
                     if mention_text == f"@{bot_username}":
-                        bot_mentioned = True
-                        break
+                        # Only respond if mention is at the start of the message
+                        # This prevents responding to casual mentions in conversation
+                        if entity.offset == 0:
+                            bot_mentioned = True
+                            break
                 # Check for text_mention (when user is mentioned by name)
                 elif entity.type == "text_mention" and hasattr(entity, 'user'):
                     if entity.user and entity.user.id == bot_id:
-                        bot_mentioned = True
-                        break
+                        # Only respond if mention is at the start
+                        if entity.offset == 0:
+                            bot_mentioned = True
+                            break
         
-        # If it's not a command and bot is not mentioned, ignore the message
+        # If it's not a command and bot is not mentioned at the start, ignore the message
         if not is_command and not bot_mentioned:
             logger.debug(
                 f"Ignoring non-command message in group chat from user {update.effective_user.id}"
