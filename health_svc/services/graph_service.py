@@ -33,16 +33,40 @@ class GraphService:
             # Return empty graph HTML if no records
             fig = go.Figure()
             fig.update_layout(
-                title=f"No health records found for {patient_name}",
+                title=dict(
+                    text=f"No health records found for {patient_name}",
+                    font=dict(size=16)
+                ),
                 xaxis_title="Timestamp",
-                yaxis_title="Value"
+                yaxis_title="Value",
+                height=400,
+                autosize=True,
+                margin=dict(l=50, r=30, t=60, b=50)
             )
-            return pio.to_html(fig, include_plotlyjs='cdn')
+            return pio.to_html(
+                fig, 
+                include_plotlyjs='cdn',
+                config=self._get_mobile_config()
+            )
         
         # Group records by record_type
         records_by_type: Dict[str, List[HealthRecordResponse]] = defaultdict(list)
         for record in records:
             records_by_type[record.record_type].append(record)
+        
+        # Determine default visibility: Creatinine if present, otherwise first record type
+        record_types = list(records_by_type.keys())
+        default_visible_type = None
+        
+        # Check for Creatinine (case-insensitive)
+        for rt in record_types:
+            if rt.lower() in ['creatinine', 'creatine']:
+                default_visible_type = rt
+                break
+        
+        # If no Creatinine found, use first record type
+        if default_visible_type is None and record_types:
+            default_visible_type = record_types[0]
         
         # Create figure
         fig = go.Figure()
@@ -75,19 +99,29 @@ class GraphService:
             # Create trace name with unit if available
             trace_name = f"{record_type}{unit_label}" if unique_units else record_type
             
+            # Determine if this trace should be visible by default
+            # Use "legendonly" for non-default traces so they appear in legend but are hidden on graph
+            # Users can click them to toggle visibility
+            if default_visible_type:
+                is_visible = True if (record_type == default_visible_type) else "legendonly"
+            else:
+                is_visible = True
+            
             # Add trace to figure with explicit line configuration
             fig.add_trace(go.Scatter(
                 x=timestamps,
                 y=values,
                 mode='lines+markers',
                 name=trace_name,
+                visible=is_visible,
+                showlegend=True,  # Explicitly show in legend
                 line=dict(
-                    width=2,
+                    width=2.5,
                     shape='linear'  # Connect points with straight lines
                 ),
                 marker=dict(
-                    size=8,
-                    line=dict(width=1)
+                    size=10,
+                    line=dict(width=1.5, color='white')
                 ),
                 connectgaps=True, 
                 hovertemplate=(
@@ -99,31 +133,121 @@ class GraphService:
                 )
             ))
         
-        # Update layout with proper datetime axis configuration
+        # Update layout with mobile-friendly configuration
         fig.update_layout(
-            title=f"Health Records for {patient_name}",
+            title=dict(
+                text=f"Health Records for {patient_name}",
+                font=dict(size=18),
+                x=0.5,
+                xanchor='center'
+            ),
             xaxis=dict(
-                title="Timestamp",
+                title=dict(text="Timestamp", font=dict(size=14)),
                 type="date",  # Ensure x-axis is treated as datetime
                 showgrid=True,
-                gridwidth=1
+                gridwidth=1,
+                gridcolor='rgba(128,128,128,0.2)',
+                tickfont=dict(size=12)
             ),
-            yaxis_title="Value",
+            yaxis=dict(
+                title=dict(text="Value", font=dict(size=14)),
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128,128,128,0.2)',
+                tickfont=dict(size=12)
+            ),
             hovermode='x unified',
+            showlegend=True,  # Explicitly show legend
             legend=dict(
                 orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
+                yanchor="top",
+                y=-0.05,  # Position just below the x-axis label (Timestamp)
+                xanchor="center",
+                x=0.5,
+                font=dict(size=12),
+                itemclick="toggle",  # Toggle individual traces independently
+                itemdoubleclick="toggle",
+                bgcolor="rgba(255,255,255,0.9)",  # Semi-transparent white background
+                bordercolor="rgba(0,0,0,0.3)",
+                borderwidth=1
             ),
-            height=600,
-            template="plotly_white"
+            height=500,
+            autosize=True,
+            margin=dict(l=60, r=30, t=80, b=120),  # Bottom margin for legend below x-axis
+            template="plotly_white",
+            # Mobile-friendly responsive settings
+            dragmode='pan',  # Better for touch devices
+            hoverlabel=dict(
+                bgcolor="white",
+                bordercolor="black",
+                font_size=12
+            )
         )
         
-        # Generate HTML
-        html_content = pio.to_html(fig, include_plotlyjs='cdn')
+        # Generate HTML with mobile-optimized config
+        html_content = pio.to_html(
+            fig, 
+            include_plotlyjs='cdn',
+            config=self._get_mobile_config(),
+            div_id="health-graph"
+        )
+        
+        # Add mobile-responsive CSS wrapper
+        mobile_css = """
+        <style>
+            #health-graph {
+                width: 100% !important;
+                max-width: 100%;
+                overflow-x: auto;
+            }
+            .js-plotly-plot {
+                width: 100% !important;
+                max-width: 100%;
+            }
+            @media (max-width: 768px) {
+                #health-graph {
+                    font-size: 14px;
+                }
+                .plotly .modebar {
+                    display: none !important;
+                }
+            }
+            @media (max-width: 480px) {
+                #health-graph {
+                    font-size: 12px;
+                }
+            }
+        </style>
+        """
+        
+        # Insert CSS before the plotly div
+        html_content = html_content.replace('<body>', f'<body>{mobile_css}')
+        
         return html_content
+    
+    def _get_mobile_config(self) -> Dict[str, Any]:
+        """
+        Get Plotly configuration optimized for mobile devices.
+        
+        Returns:
+            Dict with mobile-friendly Plotly config settings
+        """
+        return {
+            'displayModeBar': True,
+            'displaylogo': False,
+            'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
+            'responsive': True,
+            'toImageButtonOptions': {
+                'format': 'png',
+                'filename': 'health_records',
+                'height': 600,
+                'width': 1200,
+                'scale': 1
+            },
+            'scrollZoom': True,  # Enable pinch-to-zoom on mobile
+            'doubleClick': 'reset',
+            'showTips': True
+        }
     
     def _parse_value(self, value_str: str) -> float:
         """
