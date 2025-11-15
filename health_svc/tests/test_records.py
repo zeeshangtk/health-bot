@@ -310,3 +310,69 @@ def test_full_workflow(client):
     assert bp_records[0]["record_type"] == "BP"
     assert bp_records[0]["value"] == "120/80"
 
+
+def test_get_html_view_success(client):
+    """Test getting HTML graph view for a patient with records."""
+    # Create patient
+    client.post("/api/v1/patients", json={"name": "Graph Patient"})
+    
+    # Create multiple records of different types
+    records = [
+        {
+            "timestamp": "2025-01-01T10:00:00",
+            "patient": "Graph Patient",
+            "record_type": "Sugar",
+            "value": "95",
+            "unit": "mg/dL"
+        },
+        {
+            "timestamp": "2025-01-01T11:00:00",
+            "patient": "Graph Patient",
+            "record_type": "Creatinine",
+            "value": "1.2",
+            "unit": "mg/dL"
+        },
+        {
+            "timestamp": "2025-01-01T12:00:00",
+            "patient": "Graph Patient",
+            "record_type": "Sugar",
+            "value": "100",
+            "unit": "mg/dL"
+        },
+    ]
+    
+    for record in records:
+        client.post("/api/v1/records", json=record)
+    
+    # Get HTML view
+    response = client.get("/api/v1/records/html-view?patient_name=Graph Patient")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+    
+    # Verify HTML content contains plotly
+    html_content = response.text
+    assert "plotly" in html_content.lower()
+    assert "Graph Patient" in html_content
+
+
+def test_get_html_view_no_records(client):
+    """Test getting HTML graph view for a patient with no records."""
+    # Create patient
+    client.post("/api/v1/patients", json={"name": "Empty Patient"})
+    
+    # Get HTML view
+    response = client.get("/api/v1/records/html-view?patient_name=Empty Patient")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
+    
+    # Verify HTML content
+    html_content = response.text
+    assert "plotly" in html_content.lower()
+    assert "Empty Patient" in html_content
+
+
+def test_get_html_view_missing_patient_name(client):
+    """Test getting HTML view without patient_name parameter."""
+    response = client.get("/api/v1/records/html-view")
+    assert response.status_code == 422  # Validation error
+

@@ -49,11 +49,10 @@ class Database:
             )
         """)
         
-        # Drop and recreate health_records table with new schema
-        # (No data migration needed - dev/non-prod environment)
-        cursor.execute("DROP TABLE IF EXISTS health_records")
+        # Create health_records table if it doesn't exist
+        # Using IF NOT EXISTS to preserve existing data
         cursor.execute("""
-            CREATE TABLE health_records (
+            CREATE TABLE IF NOT EXISTS health_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TEXT NOT NULL,
                 patient_id INTEGER NOT NULL,

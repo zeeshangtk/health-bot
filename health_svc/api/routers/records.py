@@ -2,7 +2,7 @@
 Records router - health record and image upload endpoints.
 """
 import logging
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Response
 from typing import Optional, List
 
 from api.schemas import (
@@ -12,6 +12,7 @@ from api.schemas import (
 )
 from services.health_service import HealthService
 from services.upload_service import UploadService
+from services.graph_service import GraphService
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/api/v1/records", tags=["Health Records"])
 # Initialize services
 health_service = HealthService()
 upload_service = UploadService()
+graph_service = GraphService()
 
 
 @router.post(
@@ -85,6 +87,42 @@ async def list_records(
         limit=limit
     )
     return records
+
+
+@router.get(
+    "/html-view",
+    summary="Get HTML graph view of patient health records",
+    description="Generate an interactive HTML graph visualization of a patient's health records using Plotly. "
+                "The graph displays all record types (e.g., Sugar, Creatinine, BP) with timestamps on x-axis and values on y-axis."
+)
+async def get_html_view(
+    patient_name: str = Query(..., description="Patient name to generate graph for", example="John Doe")
+):
+    """
+    Get HTML graph view of patient health records.
+    
+    Query Parameters:
+    - **patient_name**: Patient name to generate graph for (required)
+    
+    Returns an HTML page containing an interactive Plotly graph showing:
+    - X-axis: Timestamp of measurements
+    - Y-axis: Measurement values
+    - Multiple traces: One for each record type (Sugar, Creatinine, BP, etc.)
+    
+    The HTML can be consumed by the Telegram bot or viewed directly in a browser.
+    
+    Raises:
+    - 400 Bad Request: If patient_name is not provided
+    - 404 Not Found: If patient has no records (returns empty graph)
+    """
+    # Get records for the patient
+    records = health_service.get_records(patient=patient_name)
+    
+    # Generate HTML graph
+    html_content = graph_service.generate_html_graph(records, patient_name)
+    
+    # Return HTML response
+    return Response(content=html_content, media_type="text/html")
 
 
 @router.post(

@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from storage.database import Database
 from services.health_service import HealthService
 from services.patient_service import PatientService
+from services.graph_service import GraphService
 
 
 @pytest.fixture
@@ -34,9 +35,10 @@ def test_app(temp_db):
     # Create services with test database
     health_service = HealthService(db=temp_db)
     patient_service = PatientService(db=temp_db)
+    graph_service = GraphService()
     
     # Import routers and create test versions with test services
-    from fastapi import APIRouter, HTTPException, Query
+    from fastapi import APIRouter, HTTPException, Query, Response
     from typing import Optional, List
     from api.schemas import (
         HealthRecordCreate,
@@ -99,6 +101,15 @@ def test_app(temp_db):
             limit=limit
         )
         return records
+    
+    @records_router.get("/html-view")
+    async def get_html_view(
+        patient_name: str = Query(..., description="Patient name to generate graph for")
+    ):
+        """Get HTML graph view of patient health records."""
+        records = health_service.get_records(patient=patient_name)
+        html_content = graph_service.generate_html_graph(records, patient_name)
+        return Response(content=html_content, media_type="text/html")
     
     # Include all routers
     app.include_router(health_router)
