@@ -12,6 +12,7 @@ from handlers.add_record import get_add_record_conversation_handler
 from handlers.add_patient import get_add_patient_handler
 from handlers.get_patients import get_get_patients_handler  # NEW: Get patients handler
 from handlers.view import get_view_records_conversation_handler
+from handlers.view_records_graph import get_view_records_graph_conversation_handler
 from handlers.export import get_export_conversation_handler
 from handlers.upload_record import get_upload_record_conversation_handler
 from handlers.unknown_command import get_unknown_command_handler, get_help_callback_handler
@@ -118,6 +119,7 @@ def main() -> None:
     application.add_handler(get_add_record_conversation_handler())
     application.add_handler(get_add_patient_handler())  # NEW: Register add_patient handler
     application.add_handler(get_view_records_conversation_handler())
+    application.add_handler(get_view_records_graph_conversation_handler())
     application.add_handler(get_export_conversation_handler())
     application.add_handler(get_upload_record_conversation_handler())
     

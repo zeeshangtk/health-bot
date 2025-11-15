@@ -24,6 +24,7 @@ RECOGNIZED_COMMANDS = [
     "/add_record",
     "/upload_record",
     "/view_records",
+    "/view_records_graph",
     "/add_patient",
     "/get_patients",
     "/export",
@@ -123,6 +124,7 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
         "/add_record — Add a new medical record (text or photo)\n"
         "/upload_record — Upload a medical lab report image\n"
         "/view_records — View recent records\n"
+        "/view_records_graph — View health records graph\n"
         "/add_patient — Add a new patient\n"
         "/get_patients — List all patients\n"
         "/export — Export records as CSV/JSON\n"
@@ -139,14 +141,17 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
         ],
         [
             InlineKeyboardButton("👁️ View Records", callback_data="/view_records"),
+            InlineKeyboardButton("📊 View Graph", callback_data="/view_records_graph"),
+        ],
+        [
             InlineKeyboardButton("📥 Export", callback_data="/export"),
-        ],
-        [
             InlineKeyboardButton("➕ Add Patient", callback_data="/add_patient"),
-            InlineKeyboardButton("👥 Get Patients", callback_data="/get_patients"),
         ],
         [
+            InlineKeyboardButton("👥 Get Patients", callback_data="/get_patients"),
             InlineKeyboardButton("❌ Cancel", callback_data="/cancel"),
+        ],
+        [
             InlineKeyboardButton("🏠 Start", callback_data="/start"),
         ],
     ]

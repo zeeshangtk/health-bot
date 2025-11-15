@@ -205,6 +205,37 @@ class HealthAPIClient:
             error_msg = f"Request error: {e}"
             logger.error(error_msg)
             raise ConnectionError(error_msg) from e
+    
+    async def get_html_view(self, patient_name: str) -> str:
+        """
+        Get HTML graph view of patient health records.
+        
+        Args:
+            patient_name: Patient name to generate graph for (required)
+        
+        Returns:
+            HTML content as string
+        
+        Raises:
+            ValueError: If API error occurs
+            ConnectionError: If connection fails
+        """
+        url = f"{self.base_url}/api/v1/records/html-view"
+        params = {"patient_name": patient_name}
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url, params=params)
+                response.raise_for_status()
+                return response.text
+        except httpx.HTTPStatusError as e:
+            error_msg = f"API error {e.response.status_code}: {e.response.text}"
+            logger.error(error_msg)
+            raise ValueError(error_msg) from e
+        except httpx.RequestError as e:
+            error_msg = f"Request error: {e}"
+            logger.error(error_msg)
+            raise ConnectionError(error_msg) from e
 
 
 # Global client instance
