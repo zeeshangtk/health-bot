@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  # Redis service for Celery task queue
+  redis:
+    image: redis:7-alpine
+    container_name: health-bot-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - health-bot-network
+
+  # Health Service API
+  health_svc:
+    image: ${REGISTRY:-ghcr.io}/${GITHUB_REPO_OWNER:-your-username}/health_svc:${HEALTH_SVC_TAG:-latest}
+    container_name: health-bot-api
+    restart: unless-stopped
+    ports:
+      - "${HEALTH_SVC_PORT:-8000}:8000"
+    environment:
+      # Database configuration
+      - HEALTH_SVC_DB_DIR=/app/data
+      - HEALTH_SVC_DB_FILE=health_bot.db
+      # API configuration
+      - HEALTH_SVC_HOST=0.0.0.0
+      - HEALTH_SVC_PORT=8000
+      - HEALTH_SVC_RELOAD=false
+      # Upload configuration
+      - HEALTH_SVC_UPLOAD_DIR=/app/uploads
+      - HEALTH_SVC_UPLOAD_MAX_SIZE=10485760
+      # Redis/Celery configuration
+      - HEALTH_SVC_REDIS_URL=redis://redis:6379
+      - HEALTH_SVC_REDIS_DB=0
+    volumes:
+      - health_svc_data:/app/data
+      - health_svc_uploads:/app/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    networks:
+      - health-bot-network
+
+  # Celery Worker for background tasks
+  celery_worker:
+    image: ${REGISTRY:-ghcr.io}/${GITHUB_REPO_OWNER:-your-username}/health_svc:${HEALTH_SVC_TAG:-latest}
+    container_name: health-bot-celery
+    restart: unless-stopped
+    command: celery -A celery_app worker --loglevel=info
+    environment:
+      - HEALTH_SVC_DB_DIR=/app/data
+      - HEALTH_SVC_DB_FILE=health_bot.db
+      - HEALTH_SVC_REDIS_URL=redis://redis:6379
+      - HEALTH_SVC_REDIS_DB=0
+    volumes:
+      - health_svc_data:/app/data
+      - health_svc_uploads:/app/uploads
+    depends_on:
+      - redis
+      - health_svc
+    networks:
+      - health-bot-network
+
+  # Flower - Celery monitoring (optional)
+  flower:
+    image: ${REGISTRY:-ghcr.io}/${GITHUB_REPO_OWNER:-your-username}/health_svc:${HEALTH_SVC_TAG:-latest}
+    container_name: health-bot-flower
+    restart: unless-stopped
+    ports:
+      - "${FLOWER_PORT:-5555}:5555"
+    command: celery -A celery_app flower --port=5555
+    environment:
+      - HEALTH_SVC_REDIS_URL=redis://redis:6379
+      - HEALTH_SVC_REDIS_DB=0
+    depends_on:
+      - redis
+      - celery_worker
+    networks:
+      - health-bot-network
+
+  # Telegram Bot
+  telegram_bot:
+    image: ${REGISTRY:-ghcr.io}/${GITHUB_REPO_OWNER:-your-username}/telegram_bot:${TELEGRAM_BOT_TAG:-latest}
+    container_name: health-bot-telegram
+    restart: unless-stopped
+    environment:
+      # Required: Telegram Bot Token (MUST be set in .env file)
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      # Health Service API URL (internal Docker network)
+      - HEALTH_SVC_API_URL=http://health_svc:8000
+    depends_on:
+      health_svc:
+        condition: service_healthy
+    networks:
+      - health-bot-network
+
+volumes:
+  redis_data:
+    driver: local
+  health_svc_data:
+    driver: local
+  health_svc_uploads:
+    driver: local
+
+networks:
+  health-bot-network:
+    driver: bridge
+

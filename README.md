@@ -169,7 +169,254 @@ python -m pytest telegram_bot/tests/ -v
 cd health_svc && python -m pytest tests/ -v && cd ..
 ```
 
-## 🖥️ Running the Servers
+## 🐳 Docker Deployment
+
+This project is fully containerized with multi-architecture support (linux/amd64 and linux/arm64) for deployment on both standard servers and Raspberry Pi devices.
+
+### Architecture
+
+The Docker setup includes:
+- **health_svc**: FastAPI REST API service
+- **telegram_bot**: Telegram bot service
+- **redis**: Redis server for Celery task queue
+- **celery_worker**: Background task processor
+- **flower**: Celery monitoring dashboard (optional)
+
+### Prerequisites
+
+- Docker Engine 20.10+ with Buildx support
+- Docker Compose 2.0+
+- GitHub Container Registry (GHCR) access (for pulling images)
+- Telegram Bot Token (from [@BotFather](https://t.me/botfather))
+
+### Building Images Locally
+
+You can build images locally for testing:
+
+```bash
+# Build health_svc image
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t health_svc:latest \
+  -f health_svc/Dockerfile \
+  health_svc/
+
+# Build telegram_bot image
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t telegram_bot:latest \
+  -f telegram_bot/Dockerfile \
+  telegram_bot/
+```
+
+### CI/CD Pipeline (GitHub Actions)
+
+The project includes a GitHub Actions workflow (`.github/workflows/build.yml`) that automatically:
+
+1. **Builds multi-arch images** (linux/amd64, linux/arm64) using Docker Buildx
+2. **Pushes to GHCR** with proper tagging
+3. **Caches layers** for faster builds
+4. **Triggers on**:
+   - Push to `master`/`main` branch
+   - Pull requests (build only, no push)
+   - Manual workflow dispatch
+
+#### Setting Up GitHub Actions
+
+1. **No additional secrets required** - The workflow uses `GITHUB_TOKEN` automatically provided by GitHub Actions
+2. **Image naming**: Images are pushed as:
+   - `ghcr.io/<your-username>/health_svc:<tag>`
+   - `ghcr.io/<your-username>/telegram_bot:<tag>`
+3. **Tags**: Uses `latest` by default, or custom tag via workflow dispatch
+
+#### Manual Workflow Trigger
+
+You can manually trigger builds via GitHub Actions UI:
+- Go to Actions → Build and Push Docker Images → Run workflow
+- Select service (all, health_svc, or telegram_bot)
+- Optionally specify a custom tag
+
+### Deploying on Raspberry Pi
+
+#### 1. Prepare Environment File
+
+Create a `.env` file in the project root (NEVER commit this file):
+
+```bash
+# Docker Registry Configuration
+REGISTRY=ghcr.io
+GITHUB_REPO_OWNER=your-username
+
+# Image tags
+HEALTH_SVC_TAG=latest
+TELEGRAM_BOT_TAG=latest
+
+# Service ports
+HEALTH_SVC_PORT=8000
+FLOWER_PORT=5555
+
+# REQUIRED: Telegram Bot Token
+TELEGRAM_TOKEN=your_telegram_bot_token_here
+```
+
+**⚠️ Security Best Practices:**
+- ✅ Store `.env` file on Raspberry Pi only
+- ✅ Use GitHub Actions Secrets for CI/CD (not needed for this workflow)
+- ✅ Never commit `.env` files to git
+- ✅ Use `.env.example` as a template (without secrets)
+- ❌ Never hard-code secrets in Dockerfiles
+- ❌ Never commit tokens or passwords
+
+#### 2. Authenticate with GHCR
+
+On your Raspberry Pi, authenticate with GitHub Container Registry:
+
+```bash
+# Login to GHCR (requires GitHub Personal Access Token with read:packages permission)
+echo $GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+
+# Or use interactive login
+docker login ghcr.io
+```
+
+**Creating a GitHub Personal Access Token:**
+1. Go to GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
+2. Generate new token with `read:packages` scope
+3. Use this token for Docker login
+
+#### 3. Pull Images
+
+Pull the latest images from GHCR:
+
+```bash
+# Pull all service images
+docker compose pull
+
+# Or pull individually
+docker pull ghcr.io/your-username/health_svc:latest
+docker pull ghcr.io/your-username/telegram_bot:latest
+```
+
+#### 4. Start Services
+
+Start all services with Docker Compose:
+
+```bash
+# Start all services in detached mode
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Check service status
+docker compose ps
+
+# Stop all services
+docker compose down
+
+# Stop and remove volumes (⚠️ deletes data)
+docker compose down -v
+```
+
+#### 5. Verify Deployment
+
+```bash
+# Check API health
+curl http://localhost:8000/
+
+# View API documentation
+# Open http://localhost:8000/docs in browser
+
+# Check Flower dashboard
+# Open http://localhost:5555 in browser
+
+# View service logs
+docker compose logs health_svc
+docker compose logs telegram_bot
+docker compose logs celery_worker
+```
+
+### Docker Compose Configuration
+
+The `docker-compose.yml` file includes:
+
+- **Multi-service orchestration**: All services in a single network
+- **Volume persistence**: Database and uploads stored in named volumes
+- **Health checks**: Automatic service health monitoring
+- **Dependency management**: Services start in correct order
+- **Restart policies**: Automatic restart on failure
+
+#### Service Ports
+
+- **Health Service API**: `8000` (configurable via `HEALTH_SVC_PORT`)
+- **Flower Dashboard**: `5555` (configurable via `FLOWER_PORT`)
+- **Redis**: `6379` (internal only, not exposed)
+
+#### Data Persistence
+
+Data is stored in Docker volumes:
+- `redis_data`: Redis persistence
+- `health_svc_data`: SQLite database
+- `health_svc_uploads`: Uploaded files
+
+To backup data:
+```bash
+# Backup volumes
+docker run --rm -v health-bot_health_svc_data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/health_svc_data_backup.tar.gz -C /data .
+
+# Restore volumes
+docker run --rm -v health-bot_health_svc_data:/data -v $(pwd):/backup \
+  alpine tar xzf /backup/health_svc_data_backup.tar.gz -C /data
+```
+
+### Updating Services
+
+To update to the latest images:
+
+```bash
+# Pull latest images
+docker compose pull
+
+# Restart services with new images
+docker compose up -d
+
+# Or force recreate
+docker compose up -d --force-recreate
+```
+
+### Troubleshooting
+
+#### Images not found
+- Verify GHCR authentication: `docker login ghcr.io`
+- Check image name matches your GitHub username
+- Ensure images were built and pushed successfully
+
+#### Services not starting
+- Check logs: `docker compose logs <service-name>`
+- Verify `.env` file exists and contains required variables
+- Check port conflicts: `netstat -tulpn | grep <port>`
+
+#### Database issues
+- Check volume permissions: `docker volume inspect health-bot_health_svc_data`
+- Verify database directory is writable
+
+#### Network connectivity
+- Services communicate via `health-bot-network` Docker network
+- Use service names as hostnames (e.g., `http://health_svc:8000`)
+
+### Development with Docker
+
+For local development, you can mount source code as volumes:
+
+```yaml
+# Add to docker-compose.yml services (development only)
+volumes:
+  - ./health_svc:/app
+  - ./telegram_bot:/app
+```
+
+**⚠️ Warning**: This is for development only. Production should use built images.
+
+## 🖥️ Running the Servers (Local Development)
 
 ### Using Justfile (Recommended)
 
@@ -483,9 +730,9 @@ All tests use pytest and can be run independently or together.
 
 - [ ] Add authentication/authorization
 - [ ] Support for multiple database backends
-- [ ] Docker containerization
-- [ ] CI/CD pipeline
-- [ ] Production deployment guides
+- [ ] Production deployment guides (Kubernetes, etc.)
+- [ ] Monitoring and observability (Prometheus, Grafana)
+- [ ] Automated database backups
 
 ## 📝 License
 

@@ -15,11 +15,6 @@ env/
 ENV/
 .venv
 
-# Environment files
-.env
-.env.local
-.env.*.local
-
 # IDE
 .vscode/
 .idea/
@@ -27,18 +22,39 @@ ENV/
 *.swo
 *~
 
-# Database files
-*.db
-*.db-journal
-*.db-wal
-*.db-shm
-
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
 .hypothesis/
+
+# Database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Uploads (should be mounted as volume)
+uploads/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# CI/CD
+.github/
 
 # Logs
 *.log
@@ -52,3 +68,4 @@ Thumbs.db
 *.tmp
 *.bak
 *.swp
+
