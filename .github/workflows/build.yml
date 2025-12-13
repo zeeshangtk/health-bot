@@ -10,6 +10,7 @@ on:
       - 'telegram_bot/**'
       - '.github/workflows/build.yml'
       - 'Dockerfile'
+      - 'justfile'
   pull_request:
     branches:
       - master
@@ -19,6 +20,7 @@ on:
       - 'telegram_bot/**'
       - '.github/workflows/build.yml'
       - 'Dockerfile'
+      - 'justfile'
   workflow_dispatch:
     inputs:
       service:
@@ -42,7 +44,39 @@ env:
   # REGISTRY_REPO will be set per service in the matrix
 
 jobs:
+  test:
+    name: Run Python Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install health_svc dependencies
+        run: |
+          cd health_svc
+          pip install -r requirements.txt
+
+      - name: Install telegram_bot dependencies
+        run: |
+          cd telegram_bot
+          pip install -r requirements.txt
+
+      - name: Run all tests
+        run: just test
+
   build:
+    needs: test
     name: Build and Push ${{ matrix.service }}
     runs-on: ubuntu-latest
     permissions:
