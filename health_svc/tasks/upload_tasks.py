@@ -4,13 +4,19 @@ Celery tasks for file upload processing.
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List
-from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Tuple, Optional
+from pydantic import BaseModel, Field, ValidationError
+from celery import Task
 from celery_app import celery_app
 from storage.database import get_database
 from services.gemini_service import GeminiService
 
 logger = logging.getLogger(__name__)
+
+# Constants
+DEFAULT_RETRY_BASE_DELAY = 2  # seconds
+MAX_RETRIES = 3
+NON_RETRYABLE_ERRORS = (FileNotFoundError, ValueError, ValidationError)
 
 
 # Pydantic models for lab report structure
@@ -87,20 +93,207 @@ def parse_sample_date(date_str: str) -> datetime:
         raise ValueError(f"Invalid date format: {date_str}. Expected format: DD-MM-YYYY HH:MM AM/PM") from e
 
 
+def _calculate_retry_delay(retry_count: int, base_delay: int = DEFAULT_RETRY_BASE_DELAY) -> int:
+    """
+    Calculate exponential backoff delay for retries.
+    
+    Args:
+        retry_count: Current retry attempt number (0-indexed)
+        base_delay: Base delay in seconds (default: 2)
+    
+    Returns:
+        int: Delay in seconds before next retry
+    """
+    return base_delay ** retry_count
 
-@celery_app.task(bind=True, max_retries=3)
-def process_uploaded_file(self, filename, file_path, file_size, content_type, upload_timestamp):
+
+def validate_uploaded_file(file_path: Path, expected_size: int, filename: str) -> None:
+    """
+    Validate uploaded file exists and size matches.
+    
+    Args:
+        file_path: Path to the file to validate
+        expected_size: Expected file size in bytes
+        filename: Filename for logging purposes
+    
+    Raises:
+        FileNotFoundError: If file doesn't exist
+    """
+    if not file_path.exists():
+        logger.error(f"File not found at path: {file_path}")
+        raise FileNotFoundError(f"File not found: {file_path}")
+    
+    actual_size = file_path.stat().st_size
+    if actual_size != expected_size:
+        logger.warning(
+            f"File size mismatch for {filename}: "
+            f"expected {expected_size}, got {actual_size}"
+        )
+
+
+def extract_lab_report_data(
+    file_path: Path,
+    gemini_service: Optional[GeminiService] = None
+) -> Dict[str, Any]:
+    """
+    Extract lab report data using Gemini AI.
+    
+    Args:
+        file_path: Path to the image file containing the lab report
+        gemini_service: Optional GeminiService instance (for testing)
+    
+    Returns:
+        dict: Lab report data matching LabReport structure
+    
+    Raises:
+        FileNotFoundError: If file doesn't exist
+        Exception: For API or processing errors
+    """
+    service = gemini_service or GeminiService()
+    return service.extract_lab_report(str(file_path))
+
+
+def convert_test_results_to_dicts(test_results: List[TestResult]) -> List[Dict[str, str]]:
+    """
+    Convert TestResult objects to database-ready dictionaries.
+    
+    Args:
+        test_results: List of TestResult Pydantic models
+    
+    Returns:
+        List of dictionaries with keys: test_name, results, unit
+    """
+    return [
+        {
+            "test_name": result.test_name,
+            "results": result.results,
+            "unit": result.unit
+        }
+        for result in test_results
+    ]
+
+
+def transform_lab_report_to_records(
+    lab_report: Dict[str, Any]
+) -> Tuple[LabReport, datetime, List[Dict[str, str]]]:
+    """
+    Transform lab report dictionary to database-ready format.
+    
+    Args:
+        lab_report: Raw lab report dictionary from Gemini AI
+    
+    Returns:
+        Tuple of (LabReport object, parsed sample timestamp, test results dicts)
+    
+    Raises:
+        ValidationError: If lab report structure is invalid
+        ValueError: If sample date cannot be parsed
+    """
+    # Parse the lab report structure
+    lab_report_obj = LabReport(**lab_report)
+    
+    # Parse sample date to datetime
+    sample_timestamp = parse_sample_date(lab_report_obj.patient_info.sample_date)
+    
+    # Extract test results as list of dictionaries
+    test_results = convert_test_results_to_dicts(lab_report_obj.results)
+    
+    return lab_report_obj, sample_timestamp, test_results
+
+
+def save_lab_report_to_database(
+    lab_report_obj: LabReport,
+    sample_timestamp: datetime,
+    db: Optional[Any] = None
+) -> int:
+    """
+    Save lab report records to database atomically.
+    
+    Args:
+        lab_report_obj: Parsed LabReport object
+        sample_timestamp: Parsed sample collection timestamp
+        db: Optional database instance (for testing)
+    
+    Returns:
+        int: Number of records saved
+    
+    Raises:
+        ValueError: If patient is not found in database
+        Exception: For database errors
+    """
+    # Extract test results as list of dictionaries
+    test_results = convert_test_results_to_dicts(lab_report_obj.results)
+    
+    # Get database instance and save all records atomically
+    database = db or get_database()
+    record_ids = database.save_lab_report_records(
+        patient_name=lab_report_obj.patient_info.patient_name,
+        timestamp=sample_timestamp,
+        lab_name=lab_report_obj.hospital_info.hospital_name,
+        test_results=test_results
+    )
+    
+    return len(record_ids)
+
+
+def create_processing_result(
+    filename: str,
+    file_path: Path,
+    file_size: int,
+    content_type: str,
+    upload_timestamp: str,
+    lab_report: Dict[str, Any],
+    records_saved: int
+) -> Dict[str, Any]:
+    """
+    Create standardized processing result dictionary.
+    
+    Args:
+        filename: Unique filename of the uploaded file
+        file_path: Full path to the stored file
+        file_size: Size of the file in bytes
+        content_type: MIME type of the file
+        upload_timestamp: ISO format timestamp of upload
+        lab_report: Extracted lab report data
+        records_saved: Number of records saved to database
+    
+    Returns:
+        dict: Processing result with status and metadata
+    """
+    return {
+        "status": "success",
+        "filename": filename,
+        "file_path": str(file_path),
+        "file_size": file_size,
+        "content_type": content_type,
+        "upload_timestamp": upload_timestamp,
+        "processed_at": datetime.now(timezone.utc).isoformat(),
+        "lab_report": lab_report,
+        "records_saved": records_saved
+    }
+
+
+
+@celery_app.task(bind=True, max_retries=MAX_RETRIES)
+def process_uploaded_file(
+    self: Task,
+    filename: str,
+    file_path: str,
+    file_size: int,
+    content_type: str,
+    upload_timestamp: str
+) -> Dict[str, Any]:
     """
     Process an uploaded file asynchronously.
     
-    This task is queued after a file is successfully saved to disk.
-    It can be used for post-processing operations such as:
-    - Image processing (resizing, thumbnail generation, etc.)
-    - Metadata extraction
-    - Database logging
-    - External service notifications
+    This task orchestrates the complete workflow:
+    1. Validate file exists and size matches
+    2. Extract lab report data using Gemini AI
+    3. Transform and save lab report to database
+    4. Return processing result
     
     Args:
+        self: Celery task instance (bound task)
         filename: Unique filename of the uploaded file
         file_path: Full path to the stored file
         file_size: Size of the file in bytes
@@ -111,8 +304,11 @@ def process_uploaded_file(self, filename, file_path, file_size, content_type, up
         dict: Processing result with status and metadata
     
     Raises:
-        Retry: If processing fails, the task will be retried up to 3 times
-               with exponential backoff
+        FileNotFoundError: If file doesn't exist (non-retryable)
+        ValueError: If data validation fails (non-retryable)
+        ValidationError: If lab report structure is invalid (non-retryable)
+        Retry: If processing fails with retryable error, task will be retried
+               up to MAX_RETRIES times with exponential backoff
     """
     try:
         logger.info(
@@ -120,100 +316,53 @@ def process_uploaded_file(self, filename, file_path, file_size, content_type, up
             f"(size: {file_size} bytes, type: {content_type})"
         )
         
-        # Verify file exists
         file_path_obj = Path(file_path)
-        if not file_path_obj.exists():
-            logger.error(f"File not found at path: {file_path}")
-            raise FileNotFoundError(f"File not found: {file_path}")
         
-        # Verify file size matches
-        actual_size = file_path_obj.stat().st_size
-        if actual_size != file_size:
-            logger.warning(
-                f"File size mismatch for {filename}: "
-                f"expected {file_size}, got {actual_size}"
-            )
+        # Step 1: Validate file
+        validate_uploaded_file(file_path_obj, file_size, filename)
         
-        # Extract lab report data using Gemini AI
-        try:
-            gemini_service = GeminiService()
-            lab_report = gemini_service.extract_lab_report(file_path)
-            logger.info(f"Successfully extracted lab report data from file: {filename}")
-        except Exception as e:
-            logger.error(
-                f"Failed to extract lab report data from file {filename}: {str(e)}",
-                exc_info=True
-            )
-            # Re-raise to trigger retry mechanism
-            raise
+        # Step 2: Extract lab report data
+        lab_report = extract_lab_report_data(file_path_obj)
+        logger.info(f"Successfully extracted lab report data from file: {filename}")
         
-        # Store lab report records in database atomically
-        records_saved = 0
-        try:
-            # Parse the lab report structure
-            lab_report_obj = LabReport(**lab_report)
-            
-            # Parse sample date to datetime
-            sample_timestamp = parse_sample_date(lab_report_obj.patient_info.sample_date)
-            
-            # Extract test results as list of dictionaries
-            test_results = [
-                {
-                    "test_name": result.test_name,
-                    "results": result.results,
-                    "unit": result.unit
-                }
-                for result in lab_report_obj.results
-            ]
-            
-            # Get database instance and save all records atomically
-            db = get_database()
-            record_ids = db.save_lab_report_records(
-                patient_name=lab_report_obj.patient_info.patient_name,
-                timestamp=sample_timestamp,
-                lab_name=lab_report_obj.hospital_info.hospital_name,
-                test_results=test_results
-            )
-            
-            records_saved = len(record_ids)
-            logger.info(
-                f"Successfully stored {records_saved} health records "
-                f"from lab report for file: {filename}"
-            )
-            
-        except Exception as e:
-            logger.error(
-                f"Failed to store lab report records for file {filename}: {str(e)}",
-                exc_info=True
-            )
-            # Re-raise to trigger retry mechanism
-            raise
+        # Step 3: Transform and save to database
+        lab_report_obj, sample_timestamp, _ = transform_lab_report_to_records(lab_report)
+        records_saved = save_lab_report_to_database(lab_report_obj, sample_timestamp)
+        logger.info(
+            f"Successfully stored {records_saved} health records "
+            f"from lab report for file: {filename}"
+        )
         
-        # Log successful processing
-        processed_at = datetime.now(timezone.utc).isoformat()
-        logger.info(f"Successfully processed file: {filename} at {processed_at}")
+        # Step 4: Return result
+        result = create_processing_result(
+            filename=filename,
+            file_path=file_path_obj,
+            file_size=file_size,
+            content_type=content_type,
+            upload_timestamp=upload_timestamp,
+            lab_report=lab_report,
+            records_saved=records_saved
+        )
         
-        return {
-            "status": "success",
-            "filename": filename,
-            "file_path": str(file_path),
-            "file_size": file_size,
-            "content_type": content_type,
-            "upload_timestamp": upload_timestamp,
-            "processed_at": processed_at,
-            "lab_report": lab_report,
-            "records_saved": records_saved
-        }
+        logger.info(f"Successfully processed file: {filename} at {result['processed_at']}")
+        return result
         
-    except FileNotFoundError as exc:
-        logger.error(f"File not found error processing {filename}: {str(exc)}")
-        # Don't retry if file doesn't exist
-        raise
-    except Exception as exc:
+    except NON_RETRYABLE_ERRORS as exc:
         logger.error(
-            f"Error processing file {filename}: {str(exc)}",
+            f"Non-retryable error processing {filename}: {exc}",
             exc_info=True
         )
-        # Retry the task with exponential backoff
-        raise self.retry(exc=exc, countdown=2 ** self.request.retries)
+        # Don't retry validation/data errors
+        raise
+        
+    except Exception as exc:
+        logger.error(
+            f"Error processing file {filename}: {exc}",
+            exc_info=True
+        )
+        # Retry with exponential backoff
+        raise self.retry(
+            exc=exc,
+            countdown=_calculate_retry_delay(self.request.retries)
+        )
 
