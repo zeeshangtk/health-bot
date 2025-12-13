@@ -63,3 +63,5 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=10s --retries=3 \
 # Default command
 CMD ["python", "bot.py"]
 
+
+

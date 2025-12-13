@@ -439,3 +439,5 @@ docker compose ps --format "table {{.Name}}\t{{.Status}}"
 7. **Security Scanning**: Regularly scan images for vulnerabilities
 8. **Network Security**: Use reverse proxy (nginx/traefik) with SSL/TLS
 
+
+
