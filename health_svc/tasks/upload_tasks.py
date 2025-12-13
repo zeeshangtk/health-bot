@@ -8,6 +8,7 @@ from typing import List
 from pydantic import BaseModel, Field
 from celery_app import celery_app
 from storage.database import get_database
+from services.gemini_service import GeminiService
 
 logger = logging.getLogger(__name__)
 
@@ -239,18 +240,18 @@ def process_uploaded_file(self, filename, file_path, file_size, content_type, up
                 f"expected {file_size}, got {actual_size}"
             )
         
-        # Add your processing logic here
-        # Examples:
-        # - Image processing (resize, thumbnail generation)
-        # - Metadata extraction (EXIF data, dimensions, etc.)
-        # - Database logging of upload events
-        # - External service notifications
-        # - Virus scanning
-        # - Content analysis
-        
-        # Get sample lab report data
-        lab_report = get_sample_lab_report()
-        logger.info(f"Generated sample lab report for file: {filename}")
+        # Extract lab report data using Gemini AI
+        try:
+            gemini_service = GeminiService()
+            lab_report = gemini_service.extract_lab_report(file_path)
+            logger.info(f"Successfully extracted lab report data from file: {filename}")
+        except Exception as e:
+            logger.error(
+                f"Failed to extract lab report data from file {filename}: {str(e)}",
+                exc_info=True
+            )
+            # Re-raise to trigger retry mechanism
+            raise
         
         # Store lab report records in database atomically
         records_saved = 0
