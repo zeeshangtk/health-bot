@@ -140,16 +140,24 @@ class TestProcessUploadedFile:
         mock_gemini_service = MagicMock()
         mock_gemini_service.extract_lab_report.return_value = sample_lab_report_data
         
+        # Mock PaperlessNgxService
+        mock_paperless_service = MagicMock()
+        mock_paperless_service.upload_medical_document_from_dict.return_value = {
+            "status": "success",
+            "id": 123
+        }
+        
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
-            with patch('tasks.upload_tasks.get_database', return_value=mock_database):
-                result = call_process_uploaded_file(
-                    mock_task,
-                    filename,
-                    file_path,
-                    file_size,
-                    content_type,
-                    upload_timestamp
-                )
+            with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
+                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                    result = call_process_uploaded_file(
+                        mock_task,
+                        filename,
+                        file_path,
+                        file_size,
+                        content_type,
+                        upload_timestamp
+                    )
         
         # Verify result
         assert result["status"] == "success"
@@ -163,6 +171,12 @@ class TestProcessUploadedFile:
         
         # Verify GeminiService was called
         mock_gemini_service.extract_lab_report.assert_called_once_with(file_path)
+        
+        # Verify PaperlessNgxService was called
+        mock_paperless_service.upload_medical_document_from_dict.assert_called_once_with(
+            document_path=file_path,
+            medical_info=sample_lab_report_data
+        )
         
         # Verify database was called
         mock_database.save_lab_report_records.assert_called_once()
@@ -202,17 +216,24 @@ class TestProcessUploadedFile:
         mock_gemini_service = MagicMock()
         mock_gemini_service.extract_lab_report.return_value = sample_lab_report_data
         
+        # Mock PaperlessNgxService
+        mock_paperless_service = MagicMock()
+        mock_paperless_service.upload_medical_document_from_dict.return_value = {
+            "status": "success"
+        }
+        
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
-            with patch('tasks.upload_tasks.get_database', return_value=mock_database):
-                with patch('tasks.upload_tasks.logger') as mock_logger:
-                    result = call_process_uploaded_file(
-                        mock_task,
-                        filename,
-                        file_path,
-                        reported_size,
-                        content_type,
-                        upload_timestamp
-                    )
+            with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
+                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                    with patch('tasks.upload_tasks.logger') as mock_logger:
+                        result = call_process_uploaded_file(
+                            mock_task,
+                            filename,
+                            file_path,
+                            reported_size,
+                            content_type,
+                            upload_timestamp
+                        )
         
         # Should still succeed but log warning
         assert result["status"] == "success"
@@ -265,19 +286,26 @@ class TestProcessUploadedFile:
         mock_gemini_service = MagicMock()
         mock_gemini_service.extract_lab_report.return_value = invalid_lab_report
         
+        # Mock PaperlessNgxService
+        mock_paperless_service = MagicMock()
+        mock_paperless_service.upload_medical_document_from_dict.return_value = {
+            "status": "success"
+        }
+        
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
-            with patch('tasks.upload_tasks.get_database', return_value=mock_database):
-                with patch('tasks.upload_tasks.logger') as mock_logger:
-                    # Should raise validation error when creating LabReport
-                    with pytest.raises(Exception):
-                        call_process_uploaded_file(
-                            mock_task,
-                            filename,
-                            file_path,
-                            file_size,
-                            content_type,
-                            upload_timestamp
-                        )
+            with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
+                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                    with patch('tasks.upload_tasks.logger') as mock_logger:
+                        # Should raise validation error when creating LabReport
+                        with pytest.raises(Exception):
+                            call_process_uploaded_file(
+                                mock_task,
+                                filename,
+                                file_path,
+                                file_size,
+                                content_type,
+                                upload_timestamp
+                            )
         
         mock_logger.error.assert_called()
     
@@ -309,18 +337,25 @@ class TestProcessUploadedFile:
         mock_gemini_service = MagicMock()
         mock_gemini_service.extract_lab_report.return_value = lab_report
         
+        # Mock PaperlessNgxService
+        mock_paperless_service = MagicMock()
+        mock_paperless_service.upload_medical_document_from_dict.return_value = {
+            "status": "success"
+        }
+        
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
-            with patch('tasks.upload_tasks.get_database', return_value=mock_database):
-                with patch('tasks.upload_tasks.logger') as mock_logger:
-                    with pytest.raises(ValueError):
-                        call_process_uploaded_file(
-                            mock_task,
-                            filename,
-                            file_path,
-                            file_size,
-                            content_type,
-                            upload_timestamp
-                        )
+            with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
+                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                    with patch('tasks.upload_tasks.logger') as mock_logger:
+                        with pytest.raises(ValueError):
+                            call_process_uploaded_file(
+                                mock_task,
+                                filename,
+                                file_path,
+                                file_size,
+                                content_type,
+                                upload_timestamp
+                            )
         
         mock_logger.error.assert_called()
     
@@ -336,22 +371,29 @@ class TestProcessUploadedFile:
         mock_gemini_service = MagicMock()
         mock_gemini_service.extract_lab_report.return_value = sample_lab_report_data
         
+        # Mock PaperlessNgxService
+        mock_paperless_service = MagicMock()
+        mock_paperless_service.upload_medical_document_from_dict.return_value = {
+            "status": "success"
+        }
+        
         # Mock database to raise exception
         mock_database = MagicMock()
         mock_database.save_lab_report_records.side_effect = Exception("Database Error")
         
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
-            with patch('tasks.upload_tasks.get_database', return_value=mock_database):
-                with patch('tasks.upload_tasks.logger') as mock_logger:
-                    with pytest.raises(Exception, match="Database Error"):
-                        call_process_uploaded_file(
-                            mock_task,
-                            filename,
-                            file_path,
-                            file_size,
-                            content_type,
-                            upload_timestamp
-                        )
+            with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
+                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                    with patch('tasks.upload_tasks.logger') as mock_logger:
+                        with pytest.raises(Exception, match="Database Error"):
+                            call_process_uploaded_file(
+                                mock_task,
+                                filename,
+                                file_path,
+                                file_size,
+                                content_type,
+                                upload_timestamp
+                            )
         
         mock_logger.error.assert_called()
     
@@ -434,18 +476,25 @@ class TestProcessUploadedFile:
         mock_gemini_service = MagicMock()
         mock_gemini_service.extract_lab_report.return_value = lab_report
         
+        # Mock PaperlessNgxService
+        mock_paperless_service = MagicMock()
+        mock_paperless_service.upload_medical_document_from_dict.return_value = {
+            "status": "success"
+        }
+        
         mock_database.save_lab_report_records.return_value = []  # No records saved
         
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
-            with patch('tasks.upload_tasks.get_database', return_value=mock_database):
-                result = call_process_uploaded_file(
-                    mock_task,
-                    filename,
-                    file_path,
-                    file_size,
-                    content_type,
-                    upload_timestamp
-                )
+            with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
+                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                    result = call_process_uploaded_file(
+                        mock_task,
+                        filename,
+                        file_path,
+                        file_size,
+                        content_type,
+                        upload_timestamp
+                    )
         
         assert result["status"] == "success"
         assert result["records_saved"] == 0
@@ -465,16 +514,23 @@ class TestProcessUploadedFile:
         mock_gemini_service = MagicMock()
         mock_gemini_service.extract_lab_report.return_value = sample_lab_report_data
         
+        # Mock PaperlessNgxService
+        mock_paperless_service = MagicMock()
+        mock_paperless_service.upload_medical_document_from_dict.return_value = {
+            "status": "success"
+        }
+        
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
-            with patch('tasks.upload_tasks.get_database', return_value=mock_database):
-                call_process_uploaded_file(
-                    mock_task,
-                    filename,
-                    file_path,
-                    file_size,
-                    content_type,
-                    upload_timestamp
-                )
+            with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
+                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                    call_process_uploaded_file(
+                        mock_task,
+                        filename,
+                        file_path,
+                        file_size,
+                        content_type,
+                        upload_timestamp
+                    )
         
         # Verify test_results structure
         call_kwargs = mock_database.save_lab_report_records.call_args[1]
@@ -513,16 +569,23 @@ class TestProcessUploadedFile:
         mock_gemini_service = MagicMock()
         mock_gemini_service.extract_lab_report.return_value = lab_report
         
+        # Mock PaperlessNgxService
+        mock_paperless_service = MagicMock()
+        mock_paperless_service.upload_medical_document_from_dict.return_value = {
+            "status": "success"
+        }
+        
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
-            with patch('tasks.upload_tasks.get_database', return_value=mock_database):
-                call_process_uploaded_file(
-                    mock_task,
-                    filename,
-                    file_path,
-                    file_size,
-                    content_type,
-                    upload_timestamp
-                )
+            with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
+                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                    call_process_uploaded_file(
+                        mock_task,
+                        filename,
+                        file_path,
+                        file_size,
+                        content_type,
+                        upload_timestamp
+                    )
         
         # Verify timestamp was parsed correctly
         call_kwargs = mock_database.save_lab_report_records.call_args[1]
@@ -534,4 +597,46 @@ class TestProcessUploadedFile:
         assert timestamp.day == 15
         assert timestamp.hour == 10
         assert timestamp.minute == 30
+    
+    def test_process_uploaded_file_paperless_ngx_failure(
+        self, mock_task, temp_file, sample_lab_report_data, mock_database
+    ):
+        """Test that Paperless NGX upload failure doesn't break the task."""
+        file_path, file_size = temp_file
+        filename = Path(file_path).name
+        content_type = "image/jpeg"
+        upload_timestamp = datetime.now(timezone.utc).isoformat()
+        
+        # Mock GeminiService
+        mock_gemini_service = MagicMock()
+        mock_gemini_service.extract_lab_report.return_value = sample_lab_report_data
+        
+        # Mock PaperlessNgxService to raise exception
+        mock_paperless_service = MagicMock()
+        mock_paperless_service.upload_medical_document_from_dict.side_effect = Exception("Paperless NGX Error")
+        
+        with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
+            with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
+                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                    with patch('tasks.upload_tasks.logger') as mock_logger:
+                        result = call_process_uploaded_file(
+                            mock_task,
+                            filename,
+                            file_path,
+                            file_size,
+                            content_type,
+                            upload_timestamp
+                        )
+        
+        # Task should still succeed
+        assert result["status"] == "success"
+        assert result["records_saved"] == 2
+        
+        # Should log warning about Paperless NGX failure
+        warning_calls = [call for call in mock_logger.warning.call_args_list 
+                         if "Paperless NGX" in str(call)]
+        assert len(warning_calls) > 0
+        
+        # Database should still be called
+        mock_database.save_lab_report_records.assert_called_once()
 

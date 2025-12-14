@@ -10,6 +10,7 @@ from celery import Task
 from celery_app import celery_app
 from storage.database import get_database
 from services.gemini_service import GeminiService
+from services.paperless_ngx_service import PaperlessNgxService
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +325,24 @@ def process_uploaded_file(
         # Step 2: Extract lab report data
         lab_report = extract_lab_report_data(file_path_obj)
         logger.info(f"Successfully extracted lab report data from file: {filename}")
+        
+        # Step 2.5: Upload to Paperless NGX
+        try:
+            paperless_service = PaperlessNgxService()
+            paperless_result = paperless_service.upload_medical_document_from_dict(
+                document_path=str(file_path_obj),
+                medical_info=lab_report
+            )
+            logger.info(
+                f"Successfully uploaded document to Paperless NGX: {filename}. "
+                f"Result: {paperless_result}"
+            )
+        except Exception as paperless_exc:
+            # Log error but don't fail the entire task if Paperless NGX upload fails
+            logger.warning(
+                f"Failed to upload document to Paperless NGX for {filename}: {paperless_exc}",
+                exc_info=True
+            )
         
         # Step 3: Transform and save to database
         lab_report_obj, sample_timestamp, _ = transform_lab_report_to_records(lab_report)
