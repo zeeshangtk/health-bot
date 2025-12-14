@@ -42,3 +42,8 @@ CELERY_ACCEPT_CONTENT = os.getenv("HEALTH_SVC_CELERY_ACCEPT_CONTENT", "json").sp
 CELERY_TIMEZONE = os.getenv("HEALTH_SVC_CELERY_TIMEZONE", "UTC")
 CELERY_ENABLE_UTC = os.getenv("HEALTH_SVC_CELERY_ENABLE_UTC", "true").lower() == "true"
 
+# Paperless NGX Configuration
+PAPERLESS_NGX_URL = os.getenv("PAPERLESS_NGX_URL", "http://localhost:8000")
+PAPERLESS_NGX_API_TOKEN = os.getenv("PAPERLESS_NGX_API_TOKEN", "")
+PAPERLESS_NGX_TIMEOUT = int(os.getenv("PAPERLESS_NGX_TIMEOUT", "30"))  # seconds
+
