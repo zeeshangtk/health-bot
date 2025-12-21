@@ -85,12 +85,27 @@ def parse_sample_date(date_str: str) -> datetime:
     Raises:
         ValueError: If date string cannot be parsed
     """
-    try:
-        # Parse format: "DD-MM-YYYY HH:MM AM/PM"
-        return datetime.strptime(date_str, "%d-%m-%Y %I:%M %p")
-    except ValueError as e:
-        logger.error(f"Failed to parse sample date '{date_str}': {str(e)}")
-        raise ValueError(f"Invalid date format: {date_str}. Expected format: DD-MM-YYYY HH:MM AM/PM") from e
+    formats = [
+        "%d-%m-%Y %I:%M %p",  # 08-11-2025 03:17 PM
+        "%d/%m/%Y %I:%M %p",  # 28/09/2025 03:17 PM
+        "%d-%m-%Y %H:%M",     # 08-11-2025 15:17
+        "%d/%m/%Y %H:%M",     # 28/09/2025 15:17
+        "%d-%m-%Y",           # 08-11-2025
+        "%d/%m/%Y",           # 28/09/2025
+        "%Y-%m-%d %H:%M:%S",  # 2025-11-08 15:17:00
+        "%Y-%m-%d"            # 2025-11-08
+    ]
+    
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+            
+    # If all formats fail
+    error_msg = f"Failed to parse sample date '{date_str}' with any of the expected formats."
+    logger.error(error_msg)
+    raise ValueError(f"{error_msg} Expected format like: DD-MM-YYYY HH:MM AM/PM")
 
 
 def _calculate_retry_delay(retry_count: int, base_delay: int = DEFAULT_RETRY_BASE_DELAY) -> int:

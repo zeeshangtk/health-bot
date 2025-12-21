@@ -52,7 +52,10 @@ class GeminiService:
             "3. 'biochemistry_results': Provide a dictionary grouping tests into major "
             "categories (e.g., KIDNEY_FUNCTION_TEST, ELECTROLYTES, OTHER_TEST). Each "
             "test entry must contain: 'test_name', 'results', 'unit', and "
-            "'reference_range' (use 'min-max' format when possible)."
+            "'reference_range' (use 'min-max' format when possible).\n\n"
+            "IMPORTANT: Return ONLY the raw JSON object. Do not include markdown code blocks (```json), "
+            "explanations, or any conversational text. The response must start with '{' and end with '}'.\n"
+            "DATE FORMAT: Ensure 'sample_date' uses 'DD-MM-YYYY HH:MM AM/PM' format (e.g. '08-11-2025 03:17 PM')."
         )
     
     def extract_lab_report(self, file_path: str) -> Dict[str, Any]:
@@ -86,7 +89,8 @@ class GeminiService:
         
         try:
             # Load the image file
-            logger.info(f"Sending image to Gemini for extraction: {file_path}")
+            logger.info(f"Sending image to  Failed to parse sample date '28/09/2025': time data '28/09/2025' does not match format '%d-%m-%Y %I:%M %p'
+Gemini for extraction: {file_path}")
             
             # Open image using PIL
             image = Image.open(file_path_obj)
@@ -97,17 +101,17 @@ class GeminiService:
             # Extract text from response
             response_text = response.text.strip()
             
-            # Remove markdown code blocks if present
-            if response_text.startswith("```json"):
-                response_text = response_text[7:]  # Remove ```json
-            elif response_text.startswith("```"):
-                response_text = response_text[3:]  # Remove ```
+            # Robust JSON extraction: Find the First '{' and Last '}'
+            # This handles cases where Gemini adds conversational text or markdown code blocks
+            start_index = response_text.find('{')
+            end_index = response_text.rfind('}')
             
-            if response_text.endswith("```"):
-                response_text = response_text[:-3]  # Remove trailing ```
+            if start_index != -1 and end_index != -1:
+                response_text = response_text[start_index : end_index + 1]
+            else:
+                logger.warning("Could not find JSON object in Gemini response")
             
-            response_text = response_text.strip()
-            
+            logger.info(f"Gemini response: {response_text}")
             # Parse JSON response
             try:
                 extracted_data = json.loads(response_text)

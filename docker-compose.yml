@@ -44,6 +44,7 @@ services:
       - PAPERLESS_NGX_URL=${PAPERLESS_NGX_URL:-http://localhost:8000}
       - PAPERLESS_NGX_API_TOKEN=${PAPERLESS_NGX_API_TOKEN}
       - PAPERLESS_NGX_TIMEOUT=${PAPERLESS_NGX_TIMEOUT:-30}
+      - PAPERLESS_NGX_VERIFY_SSL=${PAPERLESS_NGX_VERIFY_SSL:-true}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - health_svc_data:/app/data
@@ -76,6 +77,7 @@ services:
       - PAPERLESS_NGX_URL=${PAPERLESS_NGX_URL:-http://localhost:8000}
       - PAPERLESS_NGX_API_TOKEN=${PAPERLESS_NGX_API_TOKEN}
       - PAPERLESS_NGX_TIMEOUT=${PAPERLESS_NGX_TIMEOUT:-30}
+      - PAPERLESS_NGX_VERIFY_SSL=${PAPERLESS_NGX_VERIFY_SSL:-true}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - health_svc_data:/app/data
@@ -128,7 +130,12 @@ services:
       health_svc:
         condition: service_healthy
     networks:
-      - health-bot-network
+      fix: resolve SSL config, Gemini parsing, and date format errors
+
+- docker-compose: Pass `PAPERLESS_NGX_VERIFY_SSL` to `health_svc` and `celery_worker` to properly disable SSL verification when configured.
+- gemini_service: Enforce strict JSON output in prompt and implement robust JSON extraction to handle conversational wrappers.
+- gemini_service: Explicitly request 'DD-MM-YYYY HH:MM AM/PM' date format in prompt.
+- upload_tasks: Implement robust date parsing to support multiple formats (slashes, dashes, various time formats) to prevent `ValueError` on valid dates.- health-bot-network
     healthcheck:
       test: [ "CMD-SHELL", "kill -0 1" ]
       interval: 60s
