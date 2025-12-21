@@ -11,7 +11,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -47,7 +47,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')" ]
       interval: 30s
       timeout: 10s
       start_period: 10s
@@ -75,6 +75,11 @@ services:
       - health_svc
     networks:
       - health-bot-network
+    healthcheck:
+      test: [ "CMD-SHELL", "celery -A celery_app inspect ping" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Flower - Celery monitoring (optional)
   flower:
@@ -93,6 +98,11 @@ services:
       - celery_worker
     networks:
       - health-bot-network
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5555/')" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Telegram Bot
   telegram_bot:
@@ -109,6 +119,11 @@ services:
         condition: service_healthy
     networks:
       - health-bot-network
+    healthcheck:
+      test: [ "CMD-SHELL", "kill -0 1" ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
 
 volumes:
   redis_data:
@@ -121,6 +136,3 @@ volumes:
 networks:
   health-bot-network:
     driver: bridge
-
-
-
