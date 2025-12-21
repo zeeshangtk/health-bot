@@ -27,5 +27,5 @@ celery_app.conf.update(
 )
 
 # Auto-discover tasks from tasks module
-celery_app.autodiscover_tasks(["tasks"])
+celery_app.autodiscover_tasks(["tasks"], related_name="upload_tasks")
 
