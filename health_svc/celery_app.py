@@ -26,6 +26,6 @@ celery_app.conf.update(
     enable_utc=CELERY_ENABLE_UTC,
 )
 
-# Auto-discover tasks from tasks module
-celery_app.autodiscover_tasks(["tasks"], related_name="upload_tasks")
+# Tasks are registered via explicit import to avoid discovery issues
+import tasks.upload_tasks
 

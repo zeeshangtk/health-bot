@@ -51,8 +51,9 @@ COPY --from=builder --chown=appuser:appuser /home/builder/.local /home/appuser/.
 # Copy application code
 COPY --chown=appuser:appuser . .
 
-# Ensure local bin directory is in PATH
+# Ensure local bin directory is in PATH and set PYTHONPATH
 ENV PATH=/home/appuser/.local/bin:$PATH \
+    PYTHONPATH=/app \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 

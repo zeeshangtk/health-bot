@@ -20,6 +20,7 @@ services:
 
   # Health Service API
   health_svc:
+    build: ./health_svc
     image: ${REGISTRY:-ghcr.io}/${GITHUB_REPO_OWNER:-your-username}/health_svc:${HEALTH_SVC_TAG:-latest}
     container_name: health-bot-api
     restart: unless-stopped
@@ -56,6 +57,7 @@ services:
 
   # Celery Worker for background tasks
   celery_worker:
+    build: ./health_svc
     image: ${REGISTRY:-ghcr.io}/${GITHUB_REPO_OWNER:-your-username}/health_svc:${HEALTH_SVC_TAG:-latest}
     container_name: health-bot-celery
     restart: unless-stopped
@@ -76,6 +78,7 @@ services:
 
   # Flower - Celery monitoring (optional)
   flower:
+    build: ./health_svc
     image: ${REGISTRY:-ghcr.io}/${GITHUB_REPO_OWNER:-your-username}/health_svc:${HEALTH_SVC_TAG:-latest}
     container_name: health-bot-flower
     restart: unless-stopped

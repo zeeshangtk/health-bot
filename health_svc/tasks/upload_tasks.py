@@ -6,8 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 from pydantic import BaseModel, Field, ValidationError
-from celery import Task
-from celery_app import celery_app
+from celery import shared_task
 from storage.database import get_database
 from services.gemini_service import GeminiService
 from services.paperless_ngx_service import PaperlessNgxService
@@ -275,9 +274,9 @@ def create_processing_result(
 
 
 
-@celery_app.task(bind=True, max_retries=MAX_RETRIES)
+@shared_task(bind=True, max_retries=MAX_RETRIES)
 def process_uploaded_file(
-    self: Task,
+    self,
     filename: str,
     file_path: str,
     file_size: int,
