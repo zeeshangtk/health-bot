@@ -47,3 +47,6 @@ PAPERLESS_NGX_URL = os.getenv("PAPERLESS_NGX_URL", "http://localhost:8000")
 PAPERLESS_NGX_API_TOKEN = os.getenv("PAPERLESS_NGX_API_TOKEN", "")
 PAPERLESS_NGX_TIMEOUT = int(os.getenv("PAPERLESS_NGX_TIMEOUT", "30"))  # seconds
 
+# Google Gemini API Configuration
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+

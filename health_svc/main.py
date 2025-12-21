@@ -7,6 +7,7 @@ import uvicorn
 
 from config import API_HOST, API_PORT, API_RELOAD
 from api.routers import health_router, patients_router, records_router
+from celery_app import celery_app
 
 # Create FastAPI app
 app = FastAPI(

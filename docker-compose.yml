@@ -44,6 +44,7 @@ services:
       - PAPERLESS_NGX_URL=${PAPERLESS_NGX_URL:-http://localhost:8000}
       - PAPERLESS_NGX_API_TOKEN=${PAPERLESS_NGX_API_TOKEN}
       - PAPERLESS_NGX_TIMEOUT=${PAPERLESS_NGX_TIMEOUT:-30}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - health_svc_data:/app/data
       - health_svc_uploads:/app/uploads
@@ -75,6 +76,7 @@ services:
       - PAPERLESS_NGX_URL=${PAPERLESS_NGX_URL:-http://localhost:8000}
       - PAPERLESS_NGX_API_TOKEN=${PAPERLESS_NGX_API_TOKEN}
       - PAPERLESS_NGX_TIMEOUT=${PAPERLESS_NGX_TIMEOUT:-30}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - health_svc_data:/app/data
       - health_svc_uploads:/app/uploads
