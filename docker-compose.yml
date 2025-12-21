@@ -40,6 +40,10 @@ services:
       # Redis/Celery configuration
       - HEALTH_SVC_REDIS_URL=redis://redis:6379
       - HEALTH_SVC_REDIS_DB=0
+      # Paperless NGX configuration
+      - PAPERLESS_NGX_URL=${PAPERLESS_NGX_URL:-http://localhost:8000}
+      - PAPERLESS_NGX_API_TOKEN=${PAPERLESS_NGX_API_TOKEN}
+      - PAPERLESS_NGX_TIMEOUT=${PAPERLESS_NGX_TIMEOUT:-30}
     volumes:
       - health_svc_data:/app/data
       - health_svc_uploads:/app/uploads
@@ -67,6 +71,10 @@ services:
       - HEALTH_SVC_DB_FILE=health_bot.db
       - HEALTH_SVC_REDIS_URL=redis://redis:6379
       - HEALTH_SVC_REDIS_DB=0
+      # Paperless NGX configuration
+      - PAPERLESS_NGX_URL=${PAPERLESS_NGX_URL:-http://localhost:8000}
+      - PAPERLESS_NGX_API_TOKEN=${PAPERLESS_NGX_API_TOKEN}
+      - PAPERLESS_NGX_TIMEOUT=${PAPERLESS_NGX_TIMEOUT:-30}
     volumes:
       - health_svc_data:/app/data
       - health_svc_uploads:/app/uploads
