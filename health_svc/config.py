@@ -46,6 +46,7 @@ CELERY_ENABLE_UTC = os.getenv("HEALTH_SVC_CELERY_ENABLE_UTC", "true").lower() ==
 PAPERLESS_NGX_URL = os.getenv("PAPERLESS_NGX_URL", "http://localhost:8000")
 PAPERLESS_NGX_API_TOKEN = os.getenv("PAPERLESS_NGX_API_TOKEN", "")
 PAPERLESS_NGX_TIMEOUT = int(os.getenv("PAPERLESS_NGX_TIMEOUT", "30"))  # seconds
+PAPERLESS_NGX_VERIFY_SSL = os.getenv("PAPERLESS_NGX_VERIFY_SSL", "true").lower() == "true"
 
 # Google Gemini API Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

@@ -8,7 +8,12 @@ from typing import Dict, Any, Optional
 
 import httpx
 
-from config import PAPERLESS_NGX_URL, PAPERLESS_NGX_API_TOKEN, PAPERLESS_NGX_TIMEOUT
+from config import (
+    PAPERLESS_NGX_URL,
+    PAPERLESS_NGX_API_TOKEN,
+    PAPERLESS_NGX_TIMEOUT,
+    PAPERLESS_NGX_VERIFY_SSL
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +25,8 @@ class PaperlessNgxService:
         self,
         base_url: Optional[str] = None,
         api_token: Optional[str] = None,
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
+        verify_ssl: Optional[bool] = None
     ):
         """
         Initialize the Paperless NGX service.
@@ -36,6 +42,7 @@ class PaperlessNgxService:
         self.base_url = (base_url or PAPERLESS_NGX_URL).rstrip('/')
         self.api_token = api_token or PAPERLESS_NGX_API_TOKEN
         self.timeout = timeout or PAPERLESS_NGX_TIMEOUT
+        self.verify_ssl = verify_ssl if verify_ssl is not None else PAPERLESS_NGX_VERIFY_SSL
         
         if not self.base_url:
             raise ValueError(
@@ -158,7 +165,7 @@ class PaperlessNgxService:
             )
             
             # Make the upload request
-            with httpx.Client(timeout=self.timeout) as client:
+            with httpx.Client(timeout=self.timeout, verify=self.verify_ssl) as client:
                 # For tags, we need to send them as multiple form fields with the same name
                 # httpx supports this by using a list of tuples
                 if tag_ids:

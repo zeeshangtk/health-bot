@@ -48,11 +48,11 @@ class PatientInfo(BaseModel):
     including referring doctor details.
     """
     patient_name: str = Field(..., description="Full name of the patient", examples=["Mrs Test Patient"])
-    patient_id: str = Field(..., description="Patient ID or registration number", examples=["ABB17985"])
-    age_sex: str = Field(..., description="Age and sex of the patient", examples=["63Y / FEMALE"])
+    patient_id: Optional[str] = Field(None, description="Patient ID or registration number", examples=["ABB17985"])
+    age_sex: Optional[str] = Field(None, description="Age and sex of the patient", examples=["63Y / FEMALE"])
     sample_date: str = Field(..., description="Date and time when the sample was collected", examples=["08-11-2025 03:17 PM"])
-    referring_doctor_full_name_titles: str = Field(
-        ...,
+    referring_doctor_full_name_titles: Optional[str] = Field(
+        None,
         description="Full name and qualifications of the referring doctor",
         examples=["DR. John Doe MBBS, MD GENERAL MEDICINE, DNB CARDIOLOGY"]
     )
@@ -204,15 +204,17 @@ def transform_lab_report_to_records(
 def save_lab_report_to_database(
     lab_report_obj: LabReport,
     sample_timestamp: datetime,
-    db: Optional[Any] = None
+    db: Optional[Any] = None,
+    patient_name: Optional[str] = None
 ) -> int:
     """
     Save lab report records to database atomically.
     
     Args:
         lab_report_obj: Parsed LabReport object
-        sample_timestamp: Parsed sample collection timestamp
+        sample_timestamp: Pils (nonarsed sample collection timestamp
         db: Optional database instance (for testing)
+        patient_name: Optional patient name to override extracted name
     
     Returns:
         int: Number of records saved
@@ -224,10 +226,13 @@ def save_lab_report_to_database(
     # Extract test results as list of dictionaries
     test_results = convert_test_results_to_dicts(lab_report_obj.results)
     
+    # Use provided patient name or fallback to extracted one
+    final_patient_name = patient_name or lab_report_obj.patient_info.patient_name
+    
     # Get database instance and save all records atomically
     database = db or get_database()
     record_ids = database.save_lab_report_records(
-        patient_name=lab_report_obj.patient_info.patient_name,
+        patient_name=final_patient_name,
         timestamp=sample_timestamp,
         lab_name=lab_report_obj.hospital_info.hospital_name,
         test_results=test_results
@@ -281,7 +286,8 @@ def process_uploaded_file(
     file_path: str,
     file_size: int,
     content_type: str,
-    upload_timestamp: str
+    upload_timestamp: str,
+    patient_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Process an uploaded file asynchronously.
@@ -299,6 +305,7 @@ def process_uploaded_file(
         file_size: Size of the file in bytes
         content_type: MIME type of the file
         upload_timestamp: ISO format timestamp of upload
+        patient_name: Optional patient name to associate with the record
     
     Returns:
         dict: Processing result with status and metadata
@@ -345,7 +352,11 @@ def process_uploaded_file(
         
         # Step 3: Transform and save to database
         lab_report_obj, sample_timestamp, _ = transform_lab_report_to_records(lab_report)
-        records_saved = save_lab_report_to_database(lab_report_obj, sample_timestamp)
+        records_saved = save_lab_report_to_database(
+            lab_report_obj, 
+            sample_timestamp, 
+            patient_name=patient_name
+        )
         logger.info(
             f"Successfully stored {records_saved} health records "
             f"from lab report for file: {filename}"

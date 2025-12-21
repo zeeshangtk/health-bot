@@ -34,7 +34,8 @@ class UploadService:
     async def save_uploaded_file(
         self,
         file: UploadFile,
-        queue_background_task: bool = True
+        queue_background_task: bool = True,
+        patient_name: Optional[str] = None
     ) -> Tuple[str, str, Optional[str]]:
         """
         Save an uploaded file to disk and optionally queue background processing.
@@ -48,6 +49,7 @@ class UploadService:
         Args:
             file: The uploaded file object
             queue_background_task: Whether to queue a Celery task for background processing
+            patient_name: Optional patient name to associate with the upload
             
         Returns:
             Tuple[str, str, Optional[str]]: A tuple of (unique_filename, file_path, task_id)
@@ -96,7 +98,8 @@ class UploadService:
                         file_path=str(upload_path),
                         file_size=file_size,
                         content_type=content_type,
-                        upload_timestamp=upload_timestamp
+                        upload_timestamp=upload_timestamp,
+                        patient_name=patient_name
                     )
                     task_id = task.id
                     logger.info(f"Queued background processing task {task_id} for file: {unique_filename}")

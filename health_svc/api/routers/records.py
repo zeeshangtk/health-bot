@@ -2,7 +2,7 @@
 Records router - health record and image upload endpoints.
 """
 import logging
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Response
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Response, Form
 from typing import Optional, List
 
 from api.schemas import (
@@ -134,11 +134,15 @@ async def get_html_view(
                 "The image will be stored in the uploads directory with a unique filename. "
                 "Maximum file size is 10MB."
 )
-async def upload_image(file: UploadFile = File(..., description="Image file to upload (JPEG, PNG, GIF, or BMP)")):
+async def upload_image(
+    file: UploadFile = File(..., description="Image file to upload (JPEG, PNG, GIF, or BMP)"),
+    patient: Optional[str] = Form(None, description="Patient name associated with the lab report")
+):
     """
     Upload an image file.
     
     - **file**: Image file to upload (required, must be JPEG, PNG, GIF, or BMP format)
+    - **patient**: Optional patient name to associate with the record
     
     The uploaded file will be stored in the uploads directory with a unique UUID-based filename
     to avoid conflicts. The original file extension is preserved.
@@ -151,7 +155,7 @@ async def upload_image(file: UploadFile = File(..., description="Image file to u
     - 415 Unsupported Media Type: If the upload is not multipart/form-data
     - 500 Internal Server Error: For file system write failures
     """
-    unique_filename, file_path, task_id = await upload_service.save_uploaded_file(file)
+    unique_filename, file_path, task_id = await upload_service.save_uploaded_file(file, patient_name=patient)
     
     return ImageUploadResponse(
         status="success",
