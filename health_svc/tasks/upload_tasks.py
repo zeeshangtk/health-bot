@@ -88,6 +88,8 @@ def parse_sample_date(date_str: str) -> datetime:
     formats = [
         "%d-%m-%Y %I:%M %p",  # 08-11-2025 03:17 PM
         "%d/%m/%Y %I:%M %p",  # 28/09/2025 03:17 PM
+        "%d-%m-%Y %H:%M %p",  # 28-09-2025 00:00 AM (Gemini sometimes returns this)
+        "%d/%m/%Y %H:%M %p",  # 28/09/2025 00:00 AM
         "%d-%m-%Y %H:%M",     # 08-11-2025 15:17
         "%d/%m/%Y %H:%M",     # 28/09/2025 15:17
         "%d-%m-%Y",           # 08-11-2025

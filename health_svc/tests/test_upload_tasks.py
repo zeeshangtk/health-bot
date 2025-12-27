@@ -112,10 +112,21 @@ class TestParseSampleDate:
         result = parse_sample_date(date_str)
         
         assert result.hour == 14  # 2 PM = 14:00
+
+    def test_parse_midnight_am(self):
+        """Test parsing '00:00 AM' which Gemini sometimes returns."""
+        date_str = "28-09-2025 00:00 AM"
+        result = parse_sample_date(date_str)
+        
+        assert result.hour == 0
+        assert result.minute == 0
+        assert result.day == 28
+        assert result.month == 9
+        assert result.year == 2025
     
     def test_parse_invalid_date_format(self):
         """Test parsing an invalid date format raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid date format"):
+        with pytest.raises(ValueError, match="Failed to parse sample date"):
             parse_sample_date("2024-12-15 10:30")
     
     def test_parse_invalid_date_value(self):
@@ -639,4 +650,3 @@ class TestProcessUploadedFile:
         
         # Database should still be called
         mock_database.save_lab_report_records.assert_called_once()
-
