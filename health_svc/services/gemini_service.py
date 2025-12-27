@@ -53,6 +53,18 @@ class GeminiService:
             "categories (e.g., KIDNEY_FUNCTION_TEST, ELECTROLYTES, OTHER_TEST). Each "
             "test entry must contain: 'test_name', 'results', 'unit', and "
             "'reference_range' (use 'min-max' format when possible).\n\n"
+            "TEST NAME NORMALIZATION: Always use these standardized test names regardless of how the lab labels them:\n"
+            "  - 'Serum Creatinine' or 'Creatinine' → use 'Creatinine'\n"
+            "  - 'Serum Urea' or 'Blood Urea' or 'Urea' → use 'Blood Urea'\n"
+            "  - 'Serum Uric Acid' or 'Uric Acid' → use 'Uric Acid'\n"
+            "  - 'Serum Calcium' or 'Calcium' → use 'Calcium'\n"
+            "  - 'Serum Sodium' or 'Sodium' → use 'Sodium'\n"
+            "  - 'Serum Potassium' or 'Potassium' → use 'Potassium'\n"
+            "  - 'Serum Chloride' or 'Chloride' → use 'Chloride'\n"
+            "  - 'Blood Urea Nitrogen' or 'BUN' → use 'Blood Urea Nitrogen'\n"
+            "  - 'Fasting Blood Sugar' or 'FBS' → use 'Fasting Blood Sugar'\n"
+            "  - 'Random Blood Sugar' or 'RBS' → use 'Random Blood Sugar'\n"
+            "  - 'Haemoglobin' or 'Hemoglobin' or 'Hb' → use 'Haemoglobin'\n\n"
             "IMPORTANT: Return ONLY the raw JSON object. Do not include markdown code blocks (```json), "
             "explanations, or any conversational text. The response must start with '{' and end with '}'.\n"
             "DATE FORMAT: Ensure 'sample_date' uses 'DD-MM-YYYY HH:MM AM/PM' format (e.g. '08-11-2025 03:17 PM')."
@@ -89,8 +101,7 @@ class GeminiService:
         
         try:
             # Load the image file
-            logger.info(f"Sending image to  Failed to parse sample date '28/09/2025': time data '28/09/2025' does not match format '%d-%m-%Y %I:%M %p'
-Gemini for extraction: {file_path}")
+            logger.info(f"Sending image to Gemini for extraction: {file_path}")
             
             # Open image using PIL
             image = Image.open(file_path_obj)
