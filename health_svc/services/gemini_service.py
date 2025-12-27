@@ -237,7 +237,7 @@ Before responding:
             
             # Extract text from response
             response_text = response.text.strip()
-            
+            logger.info(f"Gemini response: {response_text}")
             # Robust JSON extraction: Find the First '{' and Last '}'
             # This handles cases where Gemini adds conversational text or markdown code blocks
             start_index = response_text.find('{')
