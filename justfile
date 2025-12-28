@@ -489,6 +489,26 @@ test-watch:
 # DEVELOPMENT UTILITIES
 # ============================================================================
 
+# Generate health graph preview HTML for UX review
+preview-graph:
+    #!/usr/bin/env bash
+    echo "Generating health graph preview..."
+    if [ -d "{{api_dir}}/venv" ]; then
+        PYTHON="$(pwd)/{{api_dir}}/venv/bin/python"
+    else
+        PYTHON="python3"
+    fi
+    cd {{api_dir}} && $PYTHON preview_graph.py
+    echo ""
+    echo "Opening preview in browser..."
+    if command -v open &> /dev/null; then
+        open ../health_graph_preview.html
+    elif command -v xdg-open &> /dev/null; then
+        xdg-open ../health_graph_preview.html
+    else
+        echo "Please open: health_graph_preview.html"
+    fi
+
 # Run linting on all services
 lint:
     #!/usr/bin/env bash

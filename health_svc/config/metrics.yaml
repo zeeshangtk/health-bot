@@ -1,0 +1,289 @@
+# Health Metric Registry Configuration
+# Each metric has a canonical name and optional aliases that map to the same config.
+# 
+# Fields:
+#   canonical_name: Primary identifier for the metric
+#   color: Hex color code for visualization
+#   range: [low, high] normal reference range (null if unknown)
+#   unit: Measurement unit
+#   axis: y1 (primary left axis) or y2 (secondary right axis for small values)
+#   category: Grouping for color bands (kidney, sugar, electrolyte, blood, liver, lipid, other)
+#   description: Educational tooltip text
+#   aliases: List of alternative names that resolve to this metric
+
+metrics:
+  # Kidney Function - Blues (y2 axis for small decimal values)
+  - canonical_name: creatinine
+    color: "#1E88E5"
+    range: [0.6, 1.2]
+    unit: mg/dl
+    axis: y2
+    category: kidney
+    description: Waste product filtered by kidneys
+    aliases:
+      - serum creatinine
+      - creat
+      - s creatinine
+
+  - canonical_name: blood urea
+    color: "#1565C0"
+    range: [15.0, 45.0]
+    unit: mg/dl
+    axis: y1
+    category: kidney
+    description: Protein breakdown product
+    aliases:
+      - serum urea
+      - urea
+
+  - canonical_name: blood urea nitrogen
+    color: "#0D47A1"
+    range: [7.0, 20.0]
+    unit: mg/dl
+    axis: y1
+    category: kidney
+    description: Nitrogen from protein breakdown
+    aliases:
+      - bun
+
+  # Blood Sugar - Greens
+  - canonical_name: random blood sugar
+    color: "#43A047"
+    range: [70.0, 140.0]
+    unit: mg/dl
+    axis: y1
+    category: sugar
+    description: Glucose level at any time
+    aliases:
+      - rbs
+
+  - canonical_name: fasting blood sugar
+    color: "#2E7D32"
+    range: [70.0, 100.0]
+    unit: mg/dl
+    axis: y1
+    category: sugar
+    description: Glucose after 8+ hours fasting
+    aliases:
+      - fbs
+      - fasting glucose
+
+  - canonical_name: blood sugar
+    color: "#66BB6A"
+    range: [70.0, 140.0]
+    unit: mg/dl
+    axis: y1
+    category: sugar
+    description: Current glucose level
+    aliases:
+      - glucose
+      - sugar
+
+  - canonical_name: hba1c
+    color: "#1B5E20"
+    range: [4.0, 5.6]
+    unit: "%"
+    axis: y2
+    category: sugar
+    description: Average blood sugar over 2-3 months
+    aliases:
+      - glycated hemoglobin
+      - a1c
+
+  # Electrolytes - Purples
+  - canonical_name: sodium
+    color: "#8E24AA"
+    range: [136.0, 145.0]
+    unit: mMol/L
+    axis: y1
+    category: electrolyte
+    description: Fluid balance & nerve function
+    aliases:
+      - na
+      - serum sodium
+
+  - canonical_name: potassium
+    color: "#AB47BC"
+    range: [3.5, 5.0]
+    unit: mMol/L
+    axis: y2
+    category: electrolyte
+    description: Heart & muscle function
+    aliases:
+      - k
+      - serum potassium
+
+  - canonical_name: chloride
+    color: "#7B1FA2"
+    range: [98.0, 106.0]
+    unit: mMol/L
+    axis: y1
+    category: electrolyte
+    description: Fluid balance & digestion
+    aliases:
+      - cl
+      - serum chloride
+
+  - canonical_name: calcium
+    color: "#BA68C8"
+    range: [8.5, 10.5]
+    unit: mg/dl
+    axis: y2
+    category: electrolyte
+    description: Bone health & muscle function
+    aliases:
+      - ca
+      - serum calcium
+
+  # Blood/Hematology - Reds
+  - canonical_name: haemoglobin
+    color: "#E53935"
+    range: [12.0, 17.5]
+    unit: g/dl
+    axis: y1
+    category: blood
+    description: Oxygen-carrying capacity
+    aliases:
+      - hemoglobin
+      - hgb
+      - hb
+
+  - canonical_name: hematocrit
+    color: "#C62828"
+    range: [36.0, 50.0]
+    unit: "%"
+    axis: y1
+    category: blood
+    description: Red blood cell percentage
+    aliases:
+      - hct
+      - pcv
+
+  - canonical_name: platelets
+    color: "#D32F2F"
+    range: [150.0, 450.0]
+    unit: k/µL
+    axis: y1
+    category: blood
+    description: Blood clotting cells
+    aliases:
+      - plt
+      - platelet count
+
+  # Liver Function - Oranges
+  - canonical_name: bilirubin
+    color: "#FB8C00"
+    range: [0.1, 1.2]
+    unit: mg/dl
+    axis: y2
+    category: liver
+    description: Liver processing indicator
+    aliases:
+      - total bilirubin
+      - tbil
+
+  - canonical_name: sgpt
+    color: "#F57C00"
+    range: [7.0, 56.0]
+    unit: U/L
+    axis: y1
+    category: liver
+    description: Liver enzyme (ALT)
+    aliases:
+      - alt
+      - alanine aminotransferase
+
+  - canonical_name: sgot
+    color: "#EF6C00"
+    range: [10.0, 40.0]
+    unit: U/L
+    axis: y1
+    category: liver
+    description: Liver enzyme (AST)
+    aliases:
+      - ast
+      - aspartate aminotransferase
+
+  # Lipids - Teals
+  - canonical_name: cholesterol
+    color: "#00897B"
+    range: [0.0, 200.0]
+    unit: mg/dl
+    axis: y1
+    category: lipid
+    description: Total blood fats
+    aliases:
+      - total cholesterol
+      - tc
+
+  - canonical_name: triglycerides
+    color: "#00796B"
+    range: [0.0, 150.0]
+    unit: mg/dl
+    axis: y1
+    category: lipid
+    description: Fat from food & body
+    aliases:
+      - tg
+      - trigs
+
+  - canonical_name: hdl
+    color: "#26A69A"
+    range: [40.0, 60.0]
+    unit: mg/dl
+    axis: y1
+    category: lipid
+    description: Good cholesterol
+    aliases:
+      - hdl cholesterol
+      - hdl-c
+
+  - canonical_name: ldl
+    color: "#004D40"
+    range: [0.0, 100.0]
+    unit: mg/dl
+    axis: y1
+    category: lipid
+    description: Bad cholesterol
+    aliases:
+      - ldl cholesterol
+      - ldl-c
+
+  # Other - Grays
+  - canonical_name: uric acid
+    color: "#757575"
+    range: [2.4, 7.0]
+    unit: mg/dl
+    axis: y2
+    category: other
+    description: Purine breakdown product
+    aliases:
+      - serum uric acid
+      - urate
+
+# Default configuration for unknown metrics
+default_metric:
+  color: "#546E7A"
+  range: null
+  unit: ""
+  axis: y1
+  category: other
+  description: ""
+
+# Reference band colors by category (RGBA for transparency)
+range_band_colors:
+  kidney: "rgba(30, 136, 229, 0.10)"
+  sugar: "rgba(67, 160, 71, 0.10)"
+  electrolyte: "rgba(142, 36, 170, 0.10)"
+  blood: "rgba(229, 57, 53, 0.10)"
+  liver: "rgba(251, 140, 0, 0.10)"
+  lipid: "rgba(0, 137, 123, 0.10)"
+  other: "rgba(117, 117, 117, 0.08)"
+
+# Clinically important metrics to show by default (canonical names)
+default_visible_metrics:
+  - creatinine
+  - blood urea
+  - random blood sugar
+  - haemoglobin
+
