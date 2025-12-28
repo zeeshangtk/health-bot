@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from storage.database import Database
 from services.health_service import HealthService
 from services.patient_service import PatientService
-from services.graph_service import GraphService
+from services.graph import GraphService
 
 
 @pytest.fixture

@@ -1,15 +1,17 @@
 """
-Backward compatibility shim for graph_service.
+Graph package for health record visualization.
 
-This module re-exports from the new location at services.graph.graph_service.
-New code should import directly from services.graph:
+This package contains:
+- GraphService: Public orchestration layer for generating health graphs
+- PlotlyBuilder: Plotly-specific figure construction
 
+Usage:
     from services.graph import GraphService
-
-This shim will be removed in a future version.
+    
+    service = GraphService()
+    html = service.generate_html_graph(records, patient_name)
 """
 
-# Re-export everything from the new location
 from services.graph.graph_service import GraphService
 from services.graph.plotly_builder import PlotlyBuilder
 
@@ -27,8 +29,10 @@ from services.metric_registry import (
 )
 
 __all__ = [
+    # Primary exports
     'GraphService',
     'PlotlyBuilder',
+    # Backward compatibility exports
     'MetricConfig',
     'get_metric_config',
     'parse_metric_value',
@@ -39,3 +43,4 @@ __all__ = [
     'RANGE_BAND_COLORS',
     'DEFAULT_VISIBLE_METRICS',
 ]
+

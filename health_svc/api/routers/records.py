@@ -12,7 +12,7 @@ from api.schemas import (
 )
 from services.health_service import HealthService
 from services.upload_service import UploadService
-from services.graph_service import GraphService
+from services.graph import GraphService
 
 # Configure logging
 logger = logging.getLogger(__name__)

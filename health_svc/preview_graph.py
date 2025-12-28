@@ -30,7 +30,7 @@ from datetime import datetime, timedelta
 sys.path.insert(0, str(Path(__file__).parent))
 
 from api.schemas import HealthRecordResponse
-from services.graph_service import GraphService
+from services.graph import GraphService
 
 
 def create_sample_records() -> list[HealthRecordResponse]:
