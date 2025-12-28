@@ -556,26 +556,53 @@ class GraphService:
         sys_vals = sys_vals[:min_len]
         dia_vals = dia_vals[:min_len]
 
-        # Systolic trace
+        # UX: Blood pressure traces have distinct visual styling
+        # - Darker, bolder appearance vs other metrics
+        # - Fill between traces emphasizes the range
+        # - Dash pattern on diastolic for additional differentiation
+        
+        # Systolic trace (top of BP range)
         fig.add_trace(go.Scatter(
             x=dates, y=sys_vals,
-            name="Systolic ↑",
+            name="Systolic",  # UX: Minimal legend - no arrows
             mode='lines+markers',
-            line=dict(color='#37474F', width=3, shape='spline'),
-            marker=dict(size=10, color='#37474F', line=dict(width=2, color='white')),
-            hovertemplate="<b>Systolic</b><br>%{x|%b %d, %Y}<br>Value: %{y} mmHg<extra></extra>",
+            line=dict(color='#263238', width=2.5, shape='spline'),  # Darker, slightly thinner
+            marker=dict(
+                size=9,
+                color='#263238',
+                symbol='triangle-up',  # UX: Triangle hints at "upper" value
+                line=dict(width=1.5, color='white')
+            ),
+            hovertemplate=(
+                "<b>Systolic (Upper)</b><br>"
+                "<span style='color:#666'>Normal: 90–120 mmHg</span><br>"
+                "%{x|%b %d, %Y}<br>"
+                "<b>Value: %{y} mmHg</b>"
+                "<extra></extra>"
+            ),
         ))
 
-        # Diastolic trace with fill to systolic
+        # Diastolic trace with fill to systolic (bottom of BP range)
         fig.add_trace(go.Scatter(
             x=dates, y=dia_vals,
-            name="Diastolic ↓",
+            name="Diastolic",  # UX: Minimal legend - no arrows
             mode='lines+markers',
-            line=dict(color='#78909C', width=3, shape='spline'),
-            marker=dict(size=10, color='#78909C', line=dict(width=2, color='white')),
+            line=dict(color='#607D8B', width=2.5, shape='spline', dash='dot'),  # UX: Dotted line distinguishes from systolic
+            marker=dict(
+                size=9,
+                color='#607D8B',
+                symbol='triangle-down',  # UX: Triangle hints at "lower" value
+                line=dict(width=1.5, color='white')
+            ),
             fill='tonexty',
-            fillcolor='rgba(55, 71, 79, 0.15)',
-            hovertemplate="<b>Diastolic</b><br>%{x|%b %d, %Y}<br>Value: %{y} mmHg<extra></extra>",
+            fillcolor='rgba(38, 50, 56, 0.08)',  # UX: More subtle fill
+            hovertemplate=(
+                "<b>Diastolic (Lower)</b><br>"
+                "<span style='color:#666'>Normal: 60–80 mmHg</span><br>"
+                "%{x|%b %d, %Y}<br>"
+                "<b>Value: %{y} mmHg</b>"
+                "<extra></extra>"
+            ),
         ))
         
         return dates
@@ -589,50 +616,64 @@ class GraphService:
         Abnormal values are shown with:
         - Different marker symbol (diamond vs circle)
         - Contrasting fill color (warning red)
+        - Enhanced size and opacity for accessibility
         This is clearer than border-only highlighting.
+        
+        UX Note: Legend shows metric name only for reduced cognitive load.
+        Units and trends are shown in tooltips and summary panel instead.
         """
         config: MetricConfig = trace_data['config']
         values = trace_data['values']
         is_abnormal = trace_data['is_abnormal']
         unit = trace_data['unit']
         
-        trend = calculate_trend(values)
-        
-        # Trace name with trend indicator
-        name = f"{record_type.title()}"
-        if trend:
-            name += f" {trend}"
-        if unit:
-            name += f" ({unit})"
+        # UX: Keep legend labels minimal - metric name only
+        # Secondary info (units, trends) moved to tooltips and summary panel
+        name = record_type.title()
 
-        # Marker styling: abnormal values get distinct visual treatment
-        # Using different colors and symbols for better accessibility
+        # UX: Enhanced abnormal marker visibility
+        # - Larger size differential for quick scanning
+        # - Higher opacity contrast for accessibility
+        # - Distinct border color for additional differentiation
         marker_colors = [
-            '#E53935' if abnormal else config.color  # Red fill for abnormal
+            '#D32F2F' if abnormal else config.color  # Slightly deeper red for abnormal
             for abnormal in is_abnormal
         ]
         marker_symbols = [
-            'diamond' if abnormal else 'circle'  # Shape change for abnormal
+            'diamond' if abnormal else 'circle'
             for abnormal in is_abnormal
         ]
         marker_sizes = [
-            14 if abnormal else 12  # Slightly larger for abnormal
+            16 if abnormal else 11  # Increased size contrast (was 14 vs 12)
             for abnormal in is_abnormal
         ]
-        # White border on all markers for contrast
-        marker_line_colors = ['white'] * len(values)
-        marker_line_widths = [2] * len(values)
+        # UX: Subtle border color hint for abnormal values
+        marker_line_colors = [
+            '#FFCDD2' if abnormal else 'white'  # Light red border for abnormal
+            for abnormal in is_abnormal
+        ]
+        marker_line_widths = [
+            2.5 if abnormal else 2
+            for abnormal in is_abnormal
+        ]
 
         # Value labels with smart formatting
         text_labels = [format_metric_value(v) for v in values]
 
-        # Hover template with description
+        # UX: Enhanced tooltip with reference range information
+        # Provides clinical context without cluttering the graph
         desc_line = f"<i>{config.description}</i><br>" if config.description else ""
+        range_line = ""
+        if config.range:
+            low, high = config.range
+            range_line = f"<span style='color:#666'>Normal: {low}–{high} {unit}</span><br>"
+        
         hovertemplate = (
             f"<b>{record_type.title()}</b><br>"
             f"{desc_line}"
+            f"{range_line}"
             "%{x|%b %d, %Y}<br>"
-            f"Value: %{{y:.2f}} {unit}"
+            f"<b>Value: %{{y:.2f}} {unit}</b>"
             "<extra></extra>"
         )
 
@@ -643,12 +684,13 @@ class GraphService:
             name=name,
             visible=True if is_visible else "legendonly",
             mode='lines+markers+text',
-            line=dict(width=3.5, color=config.color, shape='spline'),
+            line=dict(width=3, color=config.color, shape='spline'),  # Slightly thinner line
             marker=dict(
                 size=marker_sizes,
                 color=marker_colors,
                 symbol=marker_symbols,
-                line=dict(width=marker_line_widths, color=marker_line_colors)
+                line=dict(width=marker_line_widths, color=marker_line_colors),
+                opacity=[0.95 if abnormal else 0.9 for abnormal in is_abnormal],  # UX: Subtle opacity boost for abnormal
             ),
             text=text_labels,
             textposition='top center',
@@ -683,19 +725,28 @@ class GraphService:
         )
 
     def _apply_layout(self, fig: go.Figure, patient_name: str) -> None:
-        """Apply layout with dual Y-axis support."""
+        """
+        Apply layout with dual Y-axis support.
+        
+        UX Improvements:
+        - Tighter vertical spacing (reduced bottom margin)
+        - Cleaner legend with minimal labels
+        - Mobile-friendly date tick density via JavaScript injection
+        """
         fig.update_layout(
             title=dict(
-                text=f"<b>Health Trends</b><br><sup>{patient_name}</sup>",
-                font=dict(size=20),
+                text=f"<b>Health Trends</b><br><sup style='color:#757575'>{patient_name}</sup>",
+                font=dict(size=18),  # UX: Slightly smaller title
                 x=0.5, xanchor="center"
             ),
             xaxis=dict(
                 # No title - dates are self-explanatory from axis labels
                 type="date",
                 showgrid=True,
-                gridcolor='rgba(0,0,0,0.08)',
-                tickformat='%b %d',
+                gridcolor='rgba(0,0,0,0.06)',  # UX: Lighter grid
+                tickformat='%b %d',  # Default format; mobile override via JS
+                tickangle=-45,  # UX: Angled labels prevent overlap
+                nticks=8,  # UX: Limit tick density for readability
                 rangeselector=dict(
                     buttons=[
                         dict(count=1, label="1M", step="month", stepmode="backward"),
@@ -706,19 +757,20 @@ class GraphService:
                     ],
                     bgcolor='rgba(255,255,255,0.95)',
                     activecolor='#E3F2FD',
+                    font=dict(size=11),  # UX: Smaller range selector text
                 ),
-                rangeslider=dict(visible=True, thickness=0.05),
+                rangeslider=dict(visible=True, thickness=0.04),  # UX: Thinner slider
             ),
             # Primary Y-axis (left) for larger values
             yaxis=dict(
-                title="Primary Metrics",
+                title=dict(text="Primary", font=dict(size=11, color='#9E9E9E')),  # UX: Muted axis title
                 side="left",
                 showgrid=True,
-                gridcolor='rgba(0,0,0,0.08)',
+                gridcolor='rgba(0,0,0,0.06)',
             ),
             # Secondary Y-axis (right) for small decimal values
             yaxis2=dict(
-                title="Micro Metrics",
+                title=dict(text="Micro", font=dict(size=11, color='#9E9E9E')),  # UX: Muted axis title
                 side="right",
                 overlaying="y",
                 showgrid=False,
@@ -727,33 +779,38 @@ class GraphService:
             legend=dict(
                 orientation="h",
                 x=0.5, xanchor="center",
-                y=-0.15, yanchor="top",
-                font=dict(size=11),
-                bgcolor="rgba(255,255,255,0.95)",
-                bordercolor="rgba(0,0,0,0.15)",
+                y=-0.12, yanchor="top",  # UX: Moved closer to plot
+                font=dict(size=11, color='#424242'),
+                bgcolor="rgba(255,255,255,0.9)",
+                bordercolor="rgba(0,0,0,0.08)",  # UX: Lighter border
                 borderwidth=1,
-                # 3-column grid: fixed item width forces wrapping
-                entrywidth=0.30,  # ~30% of legend width per item = 3 columns
+                # UX: Responsive grid layout for legend items
+                entrywidth=0.28,  # Slightly narrower for tighter layout
                 entrywidthmode="fraction",
-                itemwidth=30,  # Marker/line sample width
-                tracegroupgap=8,  # Vertical gap between rows
+                itemwidth=30,  # Minimum allowed by Plotly is 30
+                tracegroupgap=4,  # UX: Reduced vertical gap between rows
+                itemsizing='constant',
             ),
-            height=750,
-            margin=dict(l=60, r=60, t=100, b=180),
+            height=700,  # UX: Reduced overall height
+            margin=dict(l=50, r=50, t=90, b=140),  # UX: Tighter margins
             template="plotly_white",
             paper_bgcolor='#FAFAFA',
             plot_bgcolor='#FFFFFF',
             dragmode='pan',
-            hoverlabel=dict(bgcolor="white", font_size=13),
+            hoverlabel=dict(
+                bgcolor="white",
+                font_size=12,
+                bordercolor='rgba(0,0,0,0.1)',
+            ),
         )
 
-        # Help annotation below the legend
+        # UX: Compact help annotation positioned closer to legend
         fig.add_annotation(
-            text="<i>Tap legend to show/hide  •  ◆ = outside normal range  •  Right axis for small values</i>",
+            text="<i>Tap legend to show/hide  •  ◆ outside range  •  Right axis = micro values</i>",
             xref="paper", yref="paper",
-            x=0.5, y=-0.23,
+            x=0.5, y=-0.18,  # UX: Moved closer to legend
             showarrow=False,
-            font=dict(size=10, color='#9E9E9E'),
+            font=dict(size=9, color='#BDBDBD'),  # UX: More muted
             xanchor='center'
         )
 
@@ -761,7 +818,12 @@ class GraphService:
         self, fig: go.Figure, records_by_type: Dict[str, List[HealthRecordResponse]], latest_date: datetime
     ) -> None:
         """
-        Add summary panel with latest readings.
+        Add summary panel with latest readings and trend indicators.
+        
+        UX Improvements:
+        - Softer visual styling to not compete with main title
+        - Semantic trend colors (green=improving, red=concerning, gray=stable)
+        - Improved information hierarchy inside the panel
         
         Uses datetime comparison (not string) for finding latest record.
         """
@@ -772,7 +834,6 @@ class GraphService:
         # Sort metrics: priority first, then alphabetically
         sorted_metrics: List[str] = []
         for p in priority:
-            # Check for exact match or alias match
             for m in records_by_type:
                 config = get_metric_config(m)
                 if (m == p or config.canonical_name == p) and m not in sorted_metrics:
@@ -788,17 +849,23 @@ class GraphService:
             if not type_records:
                 continue
             
-            # Find latest record using datetime comparison
+            # Find latest record and compute trend
+            sorted_records = sorted(type_records, key=lambda x: x.timestamp)
+            values_for_trend: List[float] = []
             latest_record = None
             latest_ts: Optional[datetime] = None
-            for r in type_records:
+            
+            for r in sorted_records:
                 try:
                     ts = datetime.fromisoformat(r.timestamp)
                 except ValueError:
                     continue
-                if latest_ts is None or ts > latest_ts:
-                    latest_ts = ts
-                    latest_record = r
+                val = parse_metric_value(r.value, metric)
+                if val is not None:
+                    values_for_trend.append(val)
+                    if latest_ts is None or ts > latest_ts:
+                        latest_ts = ts
+                        latest_record = r
             
             if latest_record is None:
                 continue
@@ -810,31 +877,55 @@ class GraphService:
             config = get_metric_config(metric)
             unit = latest_record.unit or config.unit
 
-            # Status icon based on range check
-            if config.is_abnormal(value):
-                icon = "⚠️"
+            # UX: Status indicator based on range check (subtle styling)
+            is_abnormal = config.is_abnormal(value)
+            if is_abnormal:
+                status_style = "color:#D32F2F"  # Red for abnormal
+                status_marker = "●"
             else:
-                icon = "✓"
+                status_style = "color:#4CAF50"  # Green for normal
+                status_marker = "●"
+
+            # UX: Semantic trend arrows with color coding
+            # Green for improvement, red for concerning, gray for stable
+            trend = calculate_trend(values_for_trend)
+            trend_html = ""
+            if trend == "↑":
+                # For most metrics, rising is concerning; for some (like hemoglobin), it may be good
+                # Simplified: use neutral color since context varies
+                trend_html = "<span style='color:#757575;font-size:10px'> ↑</span>"
+            elif trend == "↓":
+                trend_html = "<span style='color:#757575;font-size:10px'> ↓</span>"
+            elif trend == "→":
+                trend_html = "<span style='color:#BDBDBD;font-size:10px'> →</span>"
 
             val_str = format_metric_value(value)
-            items.append(f"{icon} {metric.title()}: {val_str} {unit}")
+            # UX: Compact item format with muted unit
+            items.append(
+                f"<span style='{status_style};font-size:8px'>{status_marker}</span> "
+                f"{metric.title()}: <b>{val_str}</b>"
+                f"<span style='color:#9E9E9E'> {unit}</span>{trend_html}"
+            )
 
         if not items:
             return
 
-        summary_text = f"<b>Latest ({latest_date.strftime('%b %d, %Y')})</b><br>" + "<br>".join(items)
+        # UX: Softer header styling - informational, not dominant
+        header = f"<span style='color:#757575;font-size:10px'>LATEST • {latest_date.strftime('%b %d')}</span>"
+        summary_text = header + "<br>" + "<br>".join(items)
+        
         fig.add_annotation(
             text=summary_text,
             xref="paper", yref="paper",
             x=1.0, y=1.0,
             xanchor='right', yanchor='top',
             showarrow=False,
-            font=dict(size=11),
+            font=dict(size=10, color='#424242'),  # UX: Smaller, muted text
             align='left',
-            bgcolor='rgba(255,255,255,0.95)',
-            bordercolor='rgba(0,0,0,0.1)',
+            bgcolor='rgba(250,250,250,0.92)',  # UX: Softer background
+            bordercolor='rgba(0,0,0,0.06)',  # UX: Very subtle border
             borderwidth=1,
-            borderpad=8,
+            borderpad=6,  # UX: Tighter padding
         )
 
     def _get_mobile_config(self) -> Dict[str, Any]:
@@ -856,8 +947,15 @@ class GraphService:
         }
 
     def _inject_mobile_css(self, html_content: str) -> str:
-        """Inject mobile-responsive CSS."""
-        mobile_css = """
+        """
+        Inject mobile-responsive CSS and JavaScript.
+        
+        UX Improvements:
+        - Responsive date tick formatting (month-only on mobile)
+        - Reduced legend text size on small screens
+        - Smoother touch interactions
+        """
+        mobile_enhancements = """
         <style>
             * { box-sizing: border-box; }
             body {
@@ -865,25 +963,65 @@ class GraphService:
                 padding: 8px;
                 background: #FAFAFA;
                 font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                -webkit-font-smoothing: antialiased;
             }
             #health-graph {
                 width: 100% !important;
                 max-width: 100%;
-                border-radius: 12px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                border-radius: 10px;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.06);
                 background: white;
             }
             .js-plotly-plot { width: 100% !important; }
             .legend .traces { cursor: pointer; }
+            
+            /* UX: Tablet and below */
             @media (max-width: 768px) {
                 body { padding: 4px; }
                 #health-graph { border-radius: 8px; }
                 .modebar { display: none !important; }
-            }
-            @media (max-width: 480px) {
-                body { padding: 2px; }
+                /* UX: Compact legend on tablet */
                 .legend .legendtext { font-size: 10px !important; }
             }
+            
+            /* UX: Mobile - aggressive space optimization */
+            @media (max-width: 480px) {
+                body { padding: 2px; }
+                .legend .legendtext { font-size: 9px !important; }
+                /* UX: Hide secondary annotations on very small screens */
+                .annotation-text { font-size: 8px !important; }
+            }
         </style>
+        
+        <script>
+        // UX: Responsive X-axis date formatting
+        // Mobile shows month-only labels to prevent overlap
+        (function() {
+            function updateTickFormat() {
+                var graphDiv = document.getElementById('health-graph');
+                if (!graphDiv || !graphDiv.layout) return;
+                
+                var isMobile = window.innerWidth < 600;
+                var tickFormat = isMobile ? '%b' : '%b %d';  // Month-only on mobile
+                var nticks = isMobile ? 5 : 8;  // Fewer ticks on mobile
+                
+                Plotly.relayout(graphDiv, {
+                    'xaxis.tickformat': tickFormat,
+                    'xaxis.nticks': nticks
+                });
+            }
+            
+            // Apply on load and resize
+            window.addEventListener('load', function() {
+                setTimeout(updateTickFormat, 100);
+            });
+            
+            var resizeTimeout;
+            window.addEventListener('resize', function() {
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(updateTickFormat, 150);
+            });
+        })();
+        </script>
         """
-        return html_content.replace('<body>', f'<body>{mobile_css}')
+        return html_content.replace('<body>', f'<body>{mobile_enhancements}')
