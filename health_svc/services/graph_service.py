@@ -188,6 +188,63 @@ CATEGORY_DISPLAY: Dict[str, Dict[str, str]] = {
     },
 }
 
+# Educational descriptions for metrics (shown in hover tooltips)
+# Brief, patient-friendly explanations - purely informational
+METRIC_DESCRIPTIONS: Dict[str, str] = {
+    # Kidney Function
+    'creatinine': 'Waste product filtered by kidneys',
+    'serum creatinine': 'Waste product filtered by kidneys',
+    'blood urea': 'Protein breakdown product',
+    'serum urea': 'Protein breakdown product',
+    'blood urea nitrogen': 'Nitrogen from protein breakdown',
+    'bun': 'Nitrogen from protein breakdown',
+    'egfr': 'Estimated kidney filtering rate',
+    
+    # Blood Sugar
+    'random blood sugar': 'Glucose level at any time',
+    'fasting blood sugar': 'Glucose after 8+ hours fasting',
+    'blood sugar': 'Current glucose level',
+    'glucose': 'Blood sugar level',
+    'hba1c': 'Average blood sugar over 2-3 months',
+    
+    # Electrolytes
+    'sodium': 'Fluid balance & nerve function',
+    'potassium': 'Heart & muscle function',
+    'chloride': 'Fluid balance & digestion',
+    'calcium': 'Bone health & muscle function',
+    'phosphorus': 'Bone & energy metabolism',
+    'magnesium': 'Muscle & nerve function',
+    
+    # Blood/Hematology
+    'haemoglobin': 'Oxygen-carrying capacity',
+    'hemoglobin': 'Oxygen-carrying capacity',
+    'hematocrit': 'Red blood cell percentage',
+    'rbc': 'Red blood cell count',
+    'wbc': 'White blood cell count (immunity)',
+    'platelets': 'Blood clotting cells',
+    
+    # Liver Function
+    'bilirubin': 'Liver processing indicator',
+    'sgpt': 'Liver enzyme (ALT)',
+    'alt': 'Liver cell health marker',
+    'sgot': 'Liver enzyme (AST)',
+    'ast': 'Liver & heart enzyme',
+    'alkaline phosphatase': 'Liver & bone enzyme',
+    'ggt': 'Liver & bile duct enzyme',
+    
+    # Lipids
+    'cholesterol': 'Total blood fats',
+    'triglycerides': 'Fat from food & body',
+    'hdl': 'Good cholesterol',
+    'ldl': 'Bad cholesterol',
+    'vldl': 'Very low density lipoprotein',
+    
+    # Other
+    'uric acid': 'Purine breakdown product',
+    'protein': 'Total blood protein',
+    'albumin': 'Main blood protein',
+}
+
 
 class GraphService:
     """
@@ -545,6 +602,21 @@ class GraphService:
         else:
             return " →"  # Stable (within ±5%)
     
+    def _get_metric_description(self, record_type: str) -> str:
+        """Get educational description for a metric type."""
+        normalized = record_type.lower()
+        
+        # Direct lookup
+        if normalized in METRIC_DESCRIPTIONS:
+            return METRIC_DESCRIPTIONS[normalized]
+        
+        # Partial match for variations
+        for key, desc in METRIC_DESCRIPTIONS.items():
+            if key in normalized or normalized in key:
+                return desc
+        
+        return ""  # No description available
+    
     def _create_trace(
         self, 
         record_type: str, 
@@ -561,6 +633,9 @@ class GraphService:
         # Get category for legend grouping
         category = self._get_category(record_type)
         category_info = CATEGORY_DISPLAY.get(category, CATEGORY_DISPLAY['other'])
+        
+        # Get educational description for tooltip
+        description = self._get_metric_description(record_type)
         
         # Get trend arrow for legend name
         trend_arrow = self._get_trend_indicator(values)
@@ -605,9 +680,11 @@ class GraphService:
             else:
                 text_labels.append(f"{val:.2f}")  # 2 decimals for small values
         
-        # Build custom hover template
+        # Build custom hover template with educational description
+        description_line = f"<i>{description}</i><br>" if description else ""
         hovertemplate = (
             f"<b>{record_type}</b><br>"
+            f"{description_line}"
             "%{customdata}<br>"  # Formatted date + percent change
             f"Value: %{{y:.2f}} {unit}"
             "<extra></extra>"
