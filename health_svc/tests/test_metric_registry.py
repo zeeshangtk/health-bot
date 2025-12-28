@@ -24,7 +24,7 @@ from dataclasses import dataclass
 # IMPORT TESTED FUNCTIONS
 # =============================================================================
 
-from services.metric_registry import (
+from services.graph.metric_registry import (
     _normalize_metric_name,
     parse_metric_value,
     calculate_trend,

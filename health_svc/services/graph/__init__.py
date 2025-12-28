@@ -16,7 +16,7 @@ from services.graph.graph_service import GraphService
 from services.graph.plotly_builder import PlotlyBuilder
 
 # Re-export backward compatibility symbols from metric_registry
-from services.metric_registry import (
+from services.graph.metric_registry import (
     MetricConfig,
     get_metric_config,
     parse_metric_value,

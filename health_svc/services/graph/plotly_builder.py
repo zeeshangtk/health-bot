@@ -17,13 +17,13 @@ from datetime import datetime, timedelta
 
 import plotly.graph_objects as go
 
-from services.metric_registry import (
+from services.graph.metric_registry import (
     MetricConfig,
     get_metric_config,
     format_metric_value,
     RANGE_BAND_COLORS,
 )
-from services.data_preparation_service import (
+from services.graph.data_preparation_service import (
     PreparedMetricData,
     PreparedBloodPressureData,
     MetricSummary,

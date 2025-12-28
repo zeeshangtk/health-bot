@@ -55,8 +55,8 @@ class MetricConfig:
 
 def _get_config_path() -> Path:
     """Get the path to the metrics configuration file."""
-    # Config is located relative to this module's package
-    return Path(__file__).parent.parent / 'config' / 'metrics.yaml'
+    # Config is located relative to this module's package (services/graph -> services -> health_svc)
+    return Path(__file__).parent.parent.parent / 'config' / 'metrics.yaml'
 
 
 def _load_yaml_config() -> Dict[str, Any]:

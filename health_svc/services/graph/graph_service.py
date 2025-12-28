@@ -24,7 +24,7 @@ from typing import List, Optional
 import plotly.io as pio
 
 from api.schemas import HealthRecordResponse
-from services.data_preparation_service import DataPreparationService
+from services.graph.data_preparation_service import DataPreparationService
 from services.graph.plotly_builder import PlotlyBuilder
 
 logger = logging.getLogger(__name__)
