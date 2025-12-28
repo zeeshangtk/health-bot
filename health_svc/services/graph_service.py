@@ -222,6 +222,9 @@ class GraphService:
         # Update layout with mobile-friendly configuration
         self._apply_layout(fig, patient_name, date_range)
         
+        # Add summary statistics panel
+        self._add_summary_panel(fig, records_by_type, date_range)
+        
         # Generate HTML with mobile-optimized config
         html_content = pio.to_html(
             fig, 
@@ -478,21 +481,51 @@ class GraphService:
         else:
             return 'other'
     
+    def _get_trend_indicator(self, values: List[float]) -> str:
+        """
+        Get trend arrow based on last two values.
+        
+        Returns: ↑ (rising), ↓ (falling), → (stable), or "" (single point)
+        """
+        if len(values) < 2:
+            return ""
+        
+        last = values[-1]
+        prev = values[-2]
+        
+        if prev == 0:
+            return ""
+        
+        pct_change = ((last - prev) / prev) * 100
+        
+        if pct_change > 5:  # >5% increase
+            return " ↑"
+        elif pct_change < -5:  # >5% decrease
+            return " ↓"
+        else:
+            return " →"  # Stable (within ±5%)
+    
     def _create_trace(
         self, 
         record_type: str, 
         trace_data: Dict[str, Any],
         is_visible: bool
     ) -> go.Scatter:
-        """Create a Plotly trace with semantic styling and abnormal value highlighting."""
+        """Create a Plotly trace with semantic styling, abnormal highlighting, and value labels."""
         base_color = self._get_metric_color(record_type)
         unit = trace_data['unit']
         values = trace_data['values']
         is_abnormal = trace_data.get('is_abnormal', [False] * len(values))
         percent_changes = trace_data.get('percent_changes', [''] * len(values))
         
-        # Create trace name with unit
-        trace_name = f"{record_type} ({unit})" if unit else record_type
+        # Get trend arrow for legend name
+        trend_arrow = self._get_trend_indicator(values)
+        
+        # Create trace name with unit and trend arrow
+        if unit:
+            trace_name = f"{record_type}{trend_arrow} ({unit})"
+        else:
+            trace_name = f"{record_type}{trend_arrow}"
         
         # Create per-point marker colors (red border for abnormal values)
         marker_colors = []
@@ -517,8 +550,18 @@ class GraphService:
             else:
                 custom_data.append(date)
         
+        # Create text labels for data points (show values on chart)
+        # Format based on value magnitude for readability
+        text_labels = []
+        for val in values:
+            if val >= 100:
+                text_labels.append(f"{val:.0f}")  # No decimals for large values
+            elif val >= 10:
+                text_labels.append(f"{val:.1f}")  # 1 decimal for medium values
+            else:
+                text_labels.append(f"{val:.2f}")  # 2 decimals for small values
+        
         # Build custom hover template
-        # Note: customdata now includes date + optional percent change
         hovertemplate = (
             f"<b>{record_type}</b><br>"
             "%{customdata}<br>"  # Formatted date + percent change
@@ -529,7 +572,7 @@ class GraphService:
         return go.Scatter(
             x=trace_data['timestamps'],
             y=values,
-            mode='lines+markers',
+            mode='lines+markers+text',  # Added text mode for value labels
             name=trace_name,
             visible=True if is_visible else "legendonly",
             showlegend=True,
@@ -546,6 +589,12 @@ class GraphService:
                     color=marker_line_colors
                 ),
                 symbol=marker_symbols,
+            ),
+            text=text_labels,
+            textposition='top center',
+            textfont=dict(
+                size=10,
+                color='#616161',
             ),
             connectgaps=True,
             customdata=custom_data,
@@ -683,12 +732,12 @@ class GraphService:
             ),
             
             # Sizing - taller for mobile scrolling
-            height=680,
+            height=720,
             autosize=True,
             margin=dict(
                 l=55,
-                r=55,
-                t=100,
+                r=60,   # Slightly more space for summary panel
+                t=110,  # Extra space for summary panel
                 b=160,  # Extra space for legend + helper text
             ),
             
@@ -719,6 +768,105 @@ class GraphService:
             showarrow=False,
             font=dict(size=11, color='#9E9E9E'),
             xanchor='center',
+        )
+    
+    def _add_summary_panel(
+        self, 
+        fig: go.Figure, 
+        records_by_type: Dict[str, List[HealthRecordResponse]],
+        date_range: Tuple[datetime, datetime]
+    ) -> None:
+        """
+        Add a summary statistics panel showing latest values for key metrics.
+        
+        Displays latest readings with status indicators (✓ normal, ⚠️ abnormal).
+        """
+        # Get the latest date from the records
+        latest_date = date_range[1]
+        formatted_date = latest_date.strftime('%b %d, %Y')
+        
+        # Build summary lines for key metrics (prioritize clinically important ones)
+        summary_items = []
+        
+        # Sort metrics by clinical priority
+        priority_order = ['creatinine', 'serum creatinine', 'blood urea', 'random blood sugar', 
+                         'haemoglobin', 'hemoglobin', 'sodium', 'potassium']
+        
+        sorted_metrics = []
+        for priority in priority_order:
+            for metric in records_by_type.keys():
+                if metric.lower() == priority and metric not in sorted_metrics:
+                    sorted_metrics.append(metric)
+        
+        # Add remaining metrics not in priority list
+        for metric in records_by_type.keys():
+            if metric not in sorted_metrics:
+                sorted_metrics.append(metric)
+        
+        # Limit to 5 metrics to keep summary concise
+        for metric in sorted_metrics[:5]:
+            type_records = records_by_type[metric]
+            
+            # Get latest record for this metric
+            latest_record = None
+            latest_dt = None
+            
+            for record in type_records:
+                try:
+                    dt = datetime.fromisoformat(record.timestamp)
+                    if latest_dt is None or dt > latest_dt:
+                        latest_dt = dt
+                        latest_record = record
+                except (ValueError, AttributeError):
+                    continue
+            
+            if latest_record:
+                value = self._parse_value(latest_record.value)
+                unit = latest_record.unit or self._get_default_unit(metric)
+                
+                # Check if abnormal
+                normalized = metric.lower()
+                status_icon = "✓"  # Default: normal or unknown
+                
+                if normalized in NORMAL_RANGES:
+                    min_normal, max_normal, _ = NORMAL_RANGES[normalized]
+                    if not (min_normal <= value <= max_normal):
+                        status_icon = "⚠️"
+                
+                # Format value based on magnitude
+                if value >= 100:
+                    val_str = f"{value:.0f}"
+                elif value >= 10:
+                    val_str = f"{value:.1f}"
+                else:
+                    val_str = f"{value:.2f}"
+                
+                summary_items.append(f"{status_icon} {metric}: {val_str} {unit}")
+        
+        if not summary_items:
+            return
+        
+        # Build summary text
+        summary_header = f"<b>Latest Readings</b> ({formatted_date})"
+        summary_body = "<br>".join(summary_items)
+        summary_text = f"{summary_header}<br>{summary_body}"
+        
+        # Add summary as annotation at top-right of the chart
+        fig.add_annotation(
+            text=summary_text,
+            xref="paper",
+            yref="paper",
+            x=1.0,
+            y=1.0,
+            xanchor='right',
+            yanchor='top',
+            showarrow=False,
+            font=dict(size=11, color='#424242'),
+            align='left',
+            bgcolor='rgba(255,255,255,0.95)',
+            bordercolor='rgba(0,0,0,0.1)',
+            borderwidth=1,
+            borderpad=8,
         )
     
     def _get_mobile_config(self) -> Dict[str, Any]:
