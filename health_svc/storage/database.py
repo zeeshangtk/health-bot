@@ -157,8 +157,8 @@ class Database:
             params.append(patient)
         
         if record_type:
-            query += " AND hr.record_type = ?"
-            params.append(record_type)
+            query += " AND hr.record_type LIKE ?"
+            params.append(f"%{record_type}%")
         
         query += " ORDER BY hr.timestamp DESC"
         
