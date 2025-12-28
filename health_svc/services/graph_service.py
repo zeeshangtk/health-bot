@@ -724,7 +724,7 @@ class GraphService:
                 y=0.95,
             ),
             
-            # X-axis (dates)
+            # X-axis (dates) with range selector buttons
             xaxis=dict(
                 title=dict(
                     text="Date",
@@ -741,6 +741,33 @@ class GraphService:
                 showline=True,
                 linewidth=1,
                 linecolor='rgba(0,0,0,0.2)',
+                # Date range filter buttons
+                rangeselector=dict(
+                    buttons=[
+                        dict(count=1, label="1M", step="month", stepmode="backward"),
+                        dict(count=3, label="3M", step="month", stepmode="backward"),
+                        dict(count=6, label="6M", step="month", stepmode="backward"),
+                        dict(count=1, label="1Y", step="year", stepmode="backward"),
+                        dict(step="all", label="All"),
+                    ],
+                    font=dict(size=11, color='#424242'),
+                    bgcolor='rgba(255,255,255,0.95)',
+                    activecolor='#E3F2FD',  # Light blue when active
+                    bordercolor='rgba(0,0,0,0.15)',
+                    borderwidth=1,
+                    x=0,
+                    xanchor='left',
+                    y=1.0,
+                    yanchor='bottom',
+                ),
+                # Add range slider for additional navigation
+                rangeslider=dict(
+                    visible=True,
+                    thickness=0.05,  # Thin slider
+                    bgcolor='#FAFAFA',
+                    bordercolor='rgba(0,0,0,0.1)',
+                    borderwidth=1,
+                ),
             ),
             
             # Y-axis (values)
@@ -782,13 +809,13 @@ class GraphService:
                 tracegroupgap=12,  # More space between groups
             ),
             
-            # Sizing - taller for mobile scrolling
-            height=750,
+            # Sizing - taller for mobile scrolling + range controls
+            height=800,
             autosize=True,
             margin=dict(
                 l=55,
                 r=60,   # Slightly more space for summary panel
-                t=110,  # Extra space for summary panel
+                t=130,  # Extra space for range selector buttons
                 b=180,  # Extra space for grouped legend + helper text
             ),
             
@@ -811,11 +838,11 @@ class GraphService:
         
         # Add legend helper text
         fig.add_annotation(
-            text="<i>Tap items to show/hide • Metrics grouped by category • Red borders = outside normal range</i>",
+            text="<i>Use 1M/3M/6M/1Y/All to filter dates • Tap legend items to show/hide • Red borders = outside normal</i>",
             xref="paper",
             yref="paper",
             x=0.5,
-            y=-0.24,
+            y=-0.22,
             showarrow=False,
             font=dict(size=10, color='#9E9E9E'),
             xanchor='center',
