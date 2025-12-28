@@ -1,7 +1,16 @@
 version: '3.8'
 
+# ============================================================================
+# Docker Compose for Health Bot - Optimized for Raspberry Pi 5
+# ============================================================================
+# Resource limits are set conservatively for 4-8GB RAM systems.
+# Monitor with: docker stats
+# Adjust limits based on actual usage patterns.
+# ============================================================================
+
 services:
   # Redis service for Celery task queue
+  # Lightweight in-memory store - minimal resources needed
   redis:
     image: redis:7-alpine
     container_name: health-bot-redis
@@ -17,8 +26,17 @@ services:
       retries: 5
     networks:
       - health-bot-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
 
   # Health Service API
+  # Main FastAPI application - needs more resources for request handling
   health_svc:
     build: ./health_svc
     image: ${REGISTRY:-ghcr.io}/${GITHUB_REPO_OWNER:-your-username}/health_svc:${HEALTH_SVC_TAG:-latest}
@@ -60,14 +78,23 @@ services:
       retries: 3
     networks:
       - health-bot-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 400M
+        reservations:
+          cpus: '0.25'
+          memory: 200M
 
   # Celery Worker for background tasks
+  # Handles async processing - moderate resources for task execution
   celery_worker:
     build: ./health_svc
     image: ${REGISTRY:-ghcr.io}/${GITHUB_REPO_OWNER:-your-username}/health_svc:${HEALTH_SVC_TAG:-latest}
     container_name: health-bot-celery
     restart: unless-stopped
-    command: celery -A celery_app worker --loglevel=info
+    command: celery -A celery_app worker --loglevel=info --concurrency=2
     environment:
       - HEALTH_SVC_DB_DIR=/app/data
       - HEALTH_SVC_DB_FILE=health_bot.db
@@ -92,8 +119,17 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 384M
+        reservations:
+          cpus: '0.15'
+          memory: 128M
 
   # Flower - Celery monitoring (optional)
+  # Lightweight web UI - minimal resources needed
   flower:
     build: ./health_svc
     image: ${REGISTRY:-ghcr.io}/${GITHUB_REPO_OWNER:-your-username}/health_svc:${HEALTH_SVC_TAG:-latest}
@@ -115,9 +151,19 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
 
   # Telegram Bot
+  # Event-driven bot - moderate resources for message handling
   telegram_bot:
+    build: ./telegram_bot
     image: ${REGISTRY:-ghcr.io}/${GITHUB_REPO_OWNER:-your-username}/telegram_bot:${TELEGRAM_BOT_TAG:-latest}
     container_name: health-bot-telegram
     restart: unless-stopped
@@ -136,6 +182,14 @@ services:
       interval: 60s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
 volumes:
   redis_data:
