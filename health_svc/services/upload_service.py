@@ -1,5 +1,8 @@
 """
 Service for handling file upload operations.
+
+This service contains business logic for file upload handling,
+including validation, storage, and background task queuing.
 """
 import logging
 import uuid
@@ -8,9 +11,9 @@ from pathlib import Path
 from fastapi import UploadFile, HTTPException, status
 from typing import Tuple, Optional
 
-from config import UPLOAD_DIR, UPLOAD_MAX_SIZE
+from core.config import UPLOAD_DIR, UPLOAD_MAX_SIZE
 from tasks.upload_tasks import process_uploaded_file
-from api.utils.upload_validator import validate_upload_file, validate_file_size
+from services.validators.upload_validator import validate_upload_file, validate_file_size
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +26,8 @@ class UploadService:
         Initialize the upload service.
         
         Args:
-            upload_dir: Directory where uploaded files will be stored
-            max_size: Maximum allowed file size in bytes
+            upload_dir: Directory where uploaded files will be stored.
+            max_size: Maximum allowed file size in bytes.
         """
         self.upload_dir = Path(upload_dir)
         self.max_size = max_size
@@ -47,18 +50,15 @@ class UploadService:
         4. Optionally queues a Celery task for background processing
         
         Args:
-            file: The uploaded file object
-            queue_background_task: Whether to queue a Celery task for background processing
-            patient_name: Optional patient name to associate with the upload
+            file: The uploaded file object.
+            queue_background_task: Whether to queue a Celery task for background processing.
+            patient_name: Optional patient name to associate with the upload.
             
         Returns:
-            Tuple[str, str, Optional[str]]: A tuple of (unique_filename, file_path, task_id)
-                - unique_filename: The generated unique filename
-                - file_path: Full path to the saved file
-                - task_id: Celery task ID if queued, None otherwise
+            Tuple[str, str, Optional[str]]: A tuple of (unique_filename, file_path, task_id).
                 
         Raises:
-            HTTPException: Various status codes depending on validation or I/O failures
+            HTTPException: Various status codes depending on validation or I/O failures.
         """
         # Validate file (content type and extension)
         content_type, file_extension = validate_upload_file(file, self.max_size)
@@ -122,4 +122,3 @@ class UploadService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An unexpected error occurred while processing the upload"
             )
-

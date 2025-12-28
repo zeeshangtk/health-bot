@@ -304,23 +304,34 @@ python migrate_db.py --dry-run
 ```
 health_svc/
 ├── api/                    # API layer
-│   ├── routes.py          # FastAPI route definitions
-│   └── schemas.py         # Pydantic request/response models
+│   └── routers/           # FastAPI route definitions
+│       ├── health.py      # Health check routes
+│       ├── patients.py    # Patient management routes
+│       └── records.py     # Health records routes
+├── core/                  # Core configuration
+│   └── config.py          # Configuration management
+├── models/                # Domain models
+│   └── health_record.py   # Health record model
+├── repositories/          # Database access layer
+│   ├── base.py            # Base database connection
+│   ├── health_record_repository.py  # Health records repository
+│   └── patient_repository.py        # Patients repository
+├── schemas/               # Pydantic request/response models
+│   ├── health_record.py   # Health record schemas
+│   ├── medical_info.py    # Medical info schemas
+│   ├── patient.py         # Patient schemas
+│   └── upload.py          # Upload schemas
 ├── services/              # Business logic layer
 │   ├── health_service.py  # Health record operations
-│   └── patient_service.py # Patient operations
-├── storage/               # Database layer
-│   ├── database.py       # Database connection and operations
-│   └── models.py         # SQLAlchemy models
+│   ├── patient_service.py # Patient operations
+│   └── graph/             # Graph visualization services
 ├── tasks/                 # Celery background tasks
-│   ├── __init__.py       # Tasks module initialization
-│   └── upload_tasks.py   # File upload processing tasks
-├── tests/                # Unit tests
-├── main.py               # FastAPI application entry point
-├── config.py             # Configuration management
-├── celery_app.py         # Celery application instance
-├── migrate_db.py         # Database migration script
-└── requirements.txt      # Python dependencies
+│   └── upload_tasks.py    # File upload processing tasks
+├── tests/                 # Unit tests
+├── main.py                # FastAPI application entry point
+├── celery_app.py          # Celery application instance
+├── migrate_db.py          # Database migration script
+└── requirements.txt       # Python dependencies
 ```
 
 ## 🔧 Development
@@ -335,10 +346,10 @@ The project follows Python best practices:
 
 ### Adding New Endpoints
 
-1. Define Pydantic schemas in `api/schemas.py`
-2. Add route handler in `api/routes.py` with proper tags and descriptions
+1. Define Pydantic schemas in `schemas/` directory
+2. Add route handler in `api/routers/` with proper tags and descriptions
 3. Implement business logic in appropriate service class
-4. Add tests in `tests/test_api.py`
+4. Add tests in `tests/`
 5. Test in Swagger UI at `/docs`
 
 ## 🔄 Background Processing with Celery
@@ -516,7 +527,7 @@ FLUSHDB
 
 ### Configuration
 
-Celery configuration is managed in `config.py` and can be overridden with environment variables:
+Celery configuration is managed in `core/config.py` and can be overridden with environment variables:
 
 - `HEALTH_SVC_REDIS_URL`: Redis connection URL (default: `redis://localhost:6379`)
 - `HEALTH_SVC_REDIS_DB`: Redis database number (default: `0`)

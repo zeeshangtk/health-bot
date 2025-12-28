@@ -20,8 +20,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from config import DATABASE_PATH
-from storage.database import Database
+from core.config import DATABASE_PATH
+from repositories.base import Database
 
 
 def backup_database(db_path: str) -> str:

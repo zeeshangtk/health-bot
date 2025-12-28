@@ -18,7 +18,7 @@ from tasks.upload_tasks import (
     TestResult,
     parse_sample_date
 )
-from storage.database import Database
+
 
 # For testing Celery tasks, we'll call the .run() method directly
 # which properly handles the bound task signature
@@ -75,11 +75,11 @@ def sample_lab_report_data():
 
 
 @pytest.fixture
-def mock_database():
-    """Create a mock database for testing."""
-    db = MagicMock(spec=Database)
-    db.save_lab_report_records.return_value = [1, 2]  # Return record IDs
-    return db
+def mock_health_service():
+    """Create a mock HealthService for testing."""
+    service = MagicMock()
+    service.save_lab_report_records.return_value = 2  # Return count of records saved
+    return service
 
 
 @pytest.fixture
@@ -139,7 +139,7 @@ class TestProcessUploadedFile:
     """Tests for process_uploaded_file Celery task."""
     
     def test_process_uploaded_file_success(
-        self, mock_task, temp_file, sample_lab_report_data, mock_database
+        self, mock_task, temp_file, sample_lab_report_data, mock_health_service
     ):
         """Test successful file processing."""
         file_path, file_size = temp_file
@@ -160,7 +160,7 @@ class TestProcessUploadedFile:
         
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
             with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
-                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                with patch('tasks.upload_tasks.HealthService', return_value=mock_health_service):
                     result = call_process_uploaded_file(
                         mock_task,
                         filename,
@@ -189,9 +189,9 @@ class TestProcessUploadedFile:
             medical_info=sample_lab_report_data
         )
         
-        # Verify database was called
-        mock_database.save_lab_report_records.assert_called_once()
-        call_kwargs = mock_database.save_lab_report_records.call_args[1]
+        # Verify HealthService was called
+        mock_health_service.save_lab_report_records.assert_called_once()
+        call_kwargs = mock_health_service.save_lab_report_records.call_args[1]
         assert call_kwargs["patient_name"] == "John Doe"
         assert call_kwargs["lab_name"] == "Test Hospital"
         assert len(call_kwargs["test_results"]) == 2
@@ -215,7 +215,7 @@ class TestProcessUploadedFile:
             )
     
     def test_process_uploaded_file_size_mismatch(
-        self, mock_task, temp_file, sample_lab_report_data, mock_database
+        self, mock_task, temp_file, sample_lab_report_data, mock_health_service
     ):
         """Test processing when file size doesn't match (should log warning but continue)."""
         file_path, actual_size = temp_file
@@ -235,7 +235,7 @@ class TestProcessUploadedFile:
         
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
             with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
-                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                with patch('tasks.upload_tasks.HealthService', return_value=mock_health_service):
                     with patch('tasks.upload_tasks.logger') as mock_logger:
                         result = call_process_uploaded_file(
                             mock_task,
@@ -279,7 +279,7 @@ class TestProcessUploadedFile:
         mock_logger.error.assert_called()
     
     def test_process_uploaded_file_invalid_lab_report_structure(
-        self, mock_task, temp_file, mock_database
+        self, mock_task, temp_file, mock_health_service
     ):
         """Test processing when lab report structure is invalid."""
         file_path, file_size = temp_file
@@ -305,7 +305,7 @@ class TestProcessUploadedFile:
         
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
             with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
-                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                with patch('tasks.upload_tasks.HealthService', return_value=mock_health_service):
                     with patch('tasks.upload_tasks.logger') as mock_logger:
                         # Should raise validation error when creating LabReport
                         with pytest.raises(Exception):
@@ -321,7 +321,7 @@ class TestProcessUploadedFile:
         mock_logger.error.assert_called()
     
     def test_process_uploaded_file_invalid_date_format(
-        self, mock_task, temp_file, mock_database
+        self, mock_task, temp_file, mock_health_service
     ):
         """Test processing when sample date format is invalid."""
         file_path, file_size = temp_file
@@ -356,7 +356,7 @@ class TestProcessUploadedFile:
         
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
             with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
-                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                with patch('tasks.upload_tasks.HealthService', return_value=mock_health_service):
                     with patch('tasks.upload_tasks.logger') as mock_logger:
                         with pytest.raises(ValueError):
                             call_process_uploaded_file(
@@ -388,13 +388,13 @@ class TestProcessUploadedFile:
             "status": "success"
         }
         
-        # Mock database to raise exception
-        mock_database = MagicMock()
-        mock_database.save_lab_report_records.side_effect = Exception("Database Error")
+        # Mock HealthService to raise exception
+        mock_health_service = MagicMock()
+        mock_health_service.save_lab_report_records.side_effect = Exception("Database Error")
         
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
             with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
-                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                with patch('tasks.upload_tasks.HealthService', return_value=mock_health_service):
                     with patch('tasks.upload_tasks.logger') as mock_logger:
                         with pytest.raises(Exception, match="Database Error"):
                             call_process_uploaded_file(
@@ -461,7 +461,7 @@ class TestProcessUploadedFile:
         assert not mock_task.retry.called
     
     def test_process_uploaded_file_empty_results(
-        self, mock_task, temp_file, mock_database
+        self, mock_task, temp_file, mock_health_service
     ):
         """Test processing with empty test results."""
         file_path, file_size = temp_file
@@ -493,11 +493,11 @@ class TestProcessUploadedFile:
             "status": "success"
         }
         
-        mock_database.save_lab_report_records.return_value = []  # No records saved
+        mock_health_service.save_lab_report_records.return_value = 0  # No records saved
         
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
             with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
-                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                with patch('tasks.upload_tasks.HealthService', return_value=mock_health_service):
                     result = call_process_uploaded_file(
                         mock_task,
                         filename,
@@ -509,14 +509,14 @@ class TestProcessUploadedFile:
         
         assert result["status"] == "success"
         assert result["records_saved"] == 0
-        mock_database.save_lab_report_records.assert_called_once()
-        call_kwargs = mock_database.save_lab_report_records.call_args[1]
+        mock_health_service.save_lab_report_records.assert_called_once()
+        call_kwargs = mock_health_service.save_lab_report_records.call_args[1]
         assert call_kwargs["test_results"] == []
     
     def test_process_uploaded_file_test_results_extraction(
-        self, mock_task, temp_file, sample_lab_report_data, mock_database
+        self, mock_task, temp_file, sample_lab_report_data, mock_health_service
     ):
-        """Test that test results are correctly extracted and passed to database."""
+        """Test that test results are correctly extracted and passed to service."""
         file_path, file_size = temp_file
         filename = Path(file_path).name
         content_type = "image/jpeg"
@@ -533,7 +533,7 @@ class TestProcessUploadedFile:
         
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
             with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
-                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                with patch('tasks.upload_tasks.HealthService', return_value=mock_health_service):
                     call_process_uploaded_file(
                         mock_task,
                         filename,
@@ -544,7 +544,7 @@ class TestProcessUploadedFile:
                     )
         
         # Verify test_results structure
-        call_kwargs = mock_database.save_lab_report_records.call_args[1]
+        call_kwargs = mock_health_service.save_lab_report_records.call_args[1]
         test_results = call_kwargs["test_results"]
         
         assert len(test_results) == 2
@@ -554,7 +554,7 @@ class TestProcessUploadedFile:
         assert "reference_range" not in test_results[0]  # Should be excluded
     
     def test_process_uploaded_file_timestamp_parsing(
-        self, mock_task, temp_file, mock_database
+        self, mock_task, temp_file, mock_health_service
     ):
         """Test that sample date is correctly parsed to datetime."""
         file_path, file_size = temp_file
@@ -588,7 +588,7 @@ class TestProcessUploadedFile:
         
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
             with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
-                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                with patch('tasks.upload_tasks.HealthService', return_value=mock_health_service):
                     call_process_uploaded_file(
                         mock_task,
                         filename,
@@ -599,7 +599,7 @@ class TestProcessUploadedFile:
                     )
         
         # Verify timestamp was parsed correctly
-        call_kwargs = mock_database.save_lab_report_records.call_args[1]
+        call_kwargs = mock_health_service.save_lab_report_records.call_args[1]
         timestamp = call_kwargs["timestamp"]
         
         assert isinstance(timestamp, datetime)
@@ -610,7 +610,7 @@ class TestProcessUploadedFile:
         assert timestamp.minute == 30
     
     def test_process_uploaded_file_paperless_ngx_failure(
-        self, mock_task, temp_file, sample_lab_report_data, mock_database
+        self, mock_task, temp_file, sample_lab_report_data, mock_health_service
     ):
         """Test that Paperless NGX upload failure doesn't break the task."""
         file_path, file_size = temp_file
@@ -628,7 +628,7 @@ class TestProcessUploadedFile:
         
         with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
             with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
-                with patch('tasks.upload_tasks.get_database', return_value=mock_database):
+                with patch('tasks.upload_tasks.HealthService', return_value=mock_health_service):
                     with patch('tasks.upload_tasks.logger') as mock_logger:
                         result = call_process_uploaded_file(
                             mock_task,
@@ -648,5 +648,5 @@ class TestProcessUploadedFile:
                          if "Paperless NGX" in str(call)]
         assert len(warning_calls) > 0
         
-        # Database should still be called
-        mock_database.save_lab_report_records.assert_called_once()
+        # HealthService should still be called
+        mock_health_service.save_lab_report_records.assert_called_once()

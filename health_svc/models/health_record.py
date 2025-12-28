@@ -1,5 +1,5 @@
 """
-Data models for health records.
+Domain model for health records.
 """
 from datetime import datetime
 from typing import Optional
@@ -21,12 +21,12 @@ class HealthRecord:
         Initialize a health record.
         
         Args:
-            timestamp: When the record was created
-            patient: Name of the patient
-            record_type: Type of record (BP, Sugar, Creatinine, Weight, Other)
-            value: The recorded value (as string to support various formats)
-            unit: Unit of measurement (optional)
-            lab_name: Name of the lab (optional, defaults to "self")
+            timestamp: When the record was created.
+            patient: Name of the patient.
+            record_type: Type of record (BP, Sugar, Creatinine, Weight, Other).
+            value: The recorded value (as string to support various formats).
+            unit: Unit of measurement (optional).
+            lab_name: Name of the lab (optional, defaults to "self").
         """
         self.timestamp = timestamp
         self.patient = patient

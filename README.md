@@ -16,12 +16,17 @@ The telegram bot is completely stateless and communicates with the health servic
 ```
 health-bot/
 ├── health_svc/              # Health Service API (Backend)
-│   ├── api/                # FastAPI routes and schemas
+│   ├── api/                # FastAPI routes
+│   │   └── routers/        # API endpoint routers
+│   ├── core/               # Core configuration
+│   ├── models/             # Domain models
+│   ├── repositories/       # Database access layer
+│   ├── schemas/            # Pydantic schemas for API validation
 │   ├── services/           # Business logic layer
-│   ├── storage/            # Database layer (SQLite)
+│   ├── tasks/              # Celery background tasks
 │   ├── tests/              # Unit tests
 │   ├── main.py             # FastAPI application entry point
-│   ├── migrate_db.py        # Database migration script
+│   ├── migrate_db.py       # Database migration script
 │   ├── requirements.txt    # Python dependencies
 │   └── venv/               # Virtual environment (service-specific)
 │
@@ -691,7 +696,6 @@ The project uses SQLite for data storage. The database is automatically initiali
 
 Database files are stored in:
 - Health Service: `health_svc/data/health_bot.db`
-- (Legacy) Telegram Bot: `telegram_bot/data/health_bot.db` (if exists)
 
 ## 🧪 Testing
 

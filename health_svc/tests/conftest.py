@@ -7,7 +7,8 @@ import pytest
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
 
-from storage.database import Database
+from repositories.base import Database
+from repositories import PatientRepository, HealthRecordRepository
 from services.health_service import HealthService
 from services.patient_service import PatientService
 from services.graph import GraphService
@@ -32,15 +33,22 @@ def test_app(temp_db):
     """Create a FastAPI test app with a temporary database."""
     app = FastAPI(title="Health Service API Test")
     
-    # Create services with test database
-    health_service = HealthService(db=temp_db)
-    patient_service = PatientService(db=temp_db)
+    # Create repositories with test database
+    patient_repo = PatientRepository(db=temp_db)
+    record_repo = HealthRecordRepository(db=temp_db)
+    
+    # Create services with test repositories
+    health_service = HealthService(
+        patient_repository=patient_repo,
+        health_record_repository=record_repo
+    )
+    patient_service = PatientService(patient_repository=patient_repo)
     graph_service = GraphService()
     
     # Import routers and create test versions with test services
     from fastapi import APIRouter, HTTPException, Query, Response
     from typing import Optional, List
-    from api.schemas import (
+    from schemas import (
         HealthRecordCreate,
         HealthRecordResponse,
         PatientCreate,
@@ -122,4 +130,3 @@ def test_app(temp_db):
 def client(test_app):
     """Create a test client for the API."""
     return TestClient(test_app)
-

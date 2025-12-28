@@ -1,19 +1,33 @@
 """
 Service layer for health record operations.
+
+This service contains business logic for health record management
+and orchestrates calls to repositories.
 """
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
-from storage.database import Database, get_database
-from storage.models import HealthRecord
-from api.schemas import HealthRecordResponse
+from repositories import PatientRepository, HealthRecordRepository
+from schemas import HealthRecordResponse
 
 
 class HealthService:
     """Service layer for health record operations."""
     
-    def __init__(self, db: Optional[Database] = None):
-        self.db = db or get_database()
+    def __init__(
+        self,
+        patient_repository: Optional[PatientRepository] = None,
+        health_record_repository: Optional[HealthRecordRepository] = None
+    ):
+        """
+        Initialize the health service.
+        
+        Args:
+            patient_repository: Optional PatientRepository instance.
+            health_record_repository: Optional HealthRecordRepository instance.
+        """
+        self._patient_repo = patient_repository or PatientRepository()
+        self._record_repo = health_record_repository or HealthRecordRepository()
     
     def save_record(
         self,
@@ -27,14 +41,28 @@ class HealthService:
         """
         Save a health record.
         
+        Args:
+            timestamp: When the measurement was taken.
+            patient: Patient name.
+            record_type: Type of health record.
+            value: The measurement value.
+            unit: Unit of measurement (optional).
+            lab_name: Name of the lab (optional).
+        
         Returns:
             Dict with 'success' bool and either 'record' (HealthRecordResponse) 
-            or 'message' (error message)
+            or 'message' (error message).
         """
         try:
-            record_id = self.db.save_record(
+            # Get patient ID from name
+            patient_id = self._patient_repo.get_id_by_name(patient)
+            if patient_id is None:
+                return {"success": False, "message": f"Patient '{patient}' not found in database"}
+            
+            # Save the record
+            self._record_repo.save(
                 timestamp=timestamp,
-                patient=patient,
+                patient_id=patient_id,
                 record_type=record_type,
                 value=value,
                 unit=unit,
@@ -42,8 +70,7 @@ class HealthService:
             )
             
             # Fetch the saved record to return full details
-            # Get the most recent record for this patient (should be the one we just saved)
-            records = self.db.get_records(patient=patient, limit=1)
+            records = self._record_repo.get_all(patient_name=patient, limit=1)
             if records:
                 record = records[0]
                 return {
@@ -73,9 +100,19 @@ class HealthService:
         record_type: Optional[str] = None,
         limit: Optional[int] = None
     ) -> List[HealthRecordResponse]:
-        """Get health records with filters."""
-        records = self.db.get_records(
-            patient=patient,
+        """
+        Get health records with filters.
+        
+        Args:
+            patient: Filter by patient name (optional).
+            record_type: Filter by record type (optional).
+            limit: Maximum number of records to return (optional).
+        
+        Returns:
+            List of HealthRecordResponse objects.
+        """
+        records = self._record_repo.get_all(
+            patient_name=patient,
             record_type=record_type,
             limit=limit
         )
@@ -91,4 +128,40 @@ class HealthService:
             )
             for record in records
         ]
-
+    
+    def save_lab_report_records(
+        self,
+        patient_name: str,
+        timestamp: datetime,
+        lab_name: str,
+        test_results: List[Dict[str, Any]]
+    ) -> int:
+        """
+        Save multiple health records from a lab report atomically.
+        
+        Args:
+            patient_name: Name of the patient.
+            timestamp: When the sample was collected.
+            lab_name: Name of the laboratory/hospital.
+            test_results: List of test result dictionaries.
+        
+        Returns:
+            int: Number of records saved.
+        
+        Raises:
+            ValueError: If patient is not found in database.
+        """
+        # Get patient ID from name
+        patient_id = self._patient_repo.get_id_by_name(patient_name)
+        if patient_id is None:
+            raise ValueError(f"Patient '{patient_name}' not found in database")
+        
+        # Save records atomically
+        record_ids = self._record_repo.save_batch(
+            patient_id=patient_id,
+            timestamp=timestamp,
+            lab_name=lab_name,
+            test_results=test_results
+        )
+        
+        return len(record_ids)

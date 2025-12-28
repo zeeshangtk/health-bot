@@ -5,7 +5,7 @@ Uses Pydantic BaseSettings for validation - app fails fast if required config is
 from pathlib import Path
 from typing import List
 
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -112,3 +112,4 @@ PAPERLESS_NGX_TIMEOUT = settings.paperless_ngx_timeout
 PAPERLESS_NGX_VERIFY_SSL = settings.paperless_ngx_verify_ssl
 
 GEMINI_API_KEY = settings.gemini_api_key
+

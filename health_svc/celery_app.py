@@ -1,31 +1,29 @@
 """
-Celery application configuration and initialization.
+Celery application configuration.
 """
 from celery import Celery
-from config import (
+
+from core.config import (
     CELERY_BROKER_URL,
     CELERY_RESULT_BACKEND,
     CELERY_TASK_SERIALIZER,
     CELERY_RESULT_SERIALIZER,
     CELERY_ACCEPT_CONTENT,
     CELERY_TIMEZONE,
-    CELERY_ENABLE_UTC
+    CELERY_ENABLE_UTC,
 )
 
-# Create Celery app instance
-celery_app = Celery("health_svc")
+celery_app = Celery(
+    "health_svc",
+    broker=CELERY_BROKER_URL,
+    backend=CELERY_RESULT_BACKEND,
+    include=["tasks.upload_tasks"]
+)
 
-# Configure Celery
 celery_app.conf.update(
-    broker_url=CELERY_BROKER_URL,
-    result_backend=CELERY_RESULT_BACKEND,
     task_serializer=CELERY_TASK_SERIALIZER,
     result_serializer=CELERY_RESULT_SERIALIZER,
     accept_content=CELERY_ACCEPT_CONTENT,
     timezone=CELERY_TIMEZONE,
     enable_utc=CELERY_ENABLE_UTC,
 )
-
-# Tasks are registered via explicit import to avoid discovery issues
-import tasks.upload_tasks
-

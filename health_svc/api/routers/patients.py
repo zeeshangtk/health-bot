@@ -5,8 +5,8 @@ import logging
 from fastapi import APIRouter, HTTPException
 from typing import List
 
-from api.schemas import PatientCreate, PatientResponse
-from services.patient_service import PatientService
+from schemas import PatientCreate, PatientResponse
+from services import PatientService
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -53,4 +53,3 @@ async def list_patients():
     The list is sorted alphabetically by patient name.
     """
     return patient_service.get_patients()
-

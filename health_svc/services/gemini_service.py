@@ -3,14 +3,13 @@ Service for extracting structured data from medical laboratory reports using Goo
 """
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Dict, Any
 
 import google.generativeai as genai
 from PIL import Image
 
-from config import settings
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -208,16 +207,16 @@ Before responding:
         5. Returns a dictionary matching LabReport.model_dump() format
         
         Args:
-            file_path: Path to the image file containing the lab report
+            file_path: Path to the image file containing the lab report.
             
         Returns:
             dict: A dictionary with keys 'hospital_info', 'patient_info', and 'results'
                 matching the LabReport Pydantic model structure.
                 
         Raises:
-            FileNotFoundError: If the file doesn't exist
-            ValueError: If the response cannot be parsed or is invalid
-            Exception: For other API or processing errors
+            FileNotFoundError: If the file doesn't exist.
+            ValueError: If the response cannot be parsed or is invalid.
+            Exception: For other API or processing errors.
         """
         file_path_obj = Path(file_path)
         
@@ -281,10 +280,10 @@ Before responding:
         Converts biochemistry_results (dict of categories) into a flat results list.
         
         Args:
-            extracted_data: Raw data from Gemini API with biochemistry_results as dict
+            extracted_data: Raw data from Gemini API with biochemistry_results as dict.
             
         Returns:
-            dict: Transformed data matching LabReport.model_dump() structure
+            dict: Transformed data matching LabReport.model_dump() structure.
         """
         # Extract the three main sections
         hospital_info = extracted_data.get("hospital_info", {})
@@ -306,4 +305,3 @@ Before responding:
             "patient_info": patient_info,
             "results": results
         }
-

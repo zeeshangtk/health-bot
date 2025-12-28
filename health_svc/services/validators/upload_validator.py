@@ -1,5 +1,7 @@
 """
 Validation utilities for file uploads.
+
+This module contains validation logic for file upload operations.
 """
 import logging
 from pathlib import Path
@@ -23,10 +25,10 @@ def validate_file_present(file: UploadFile) -> None:
     Validate that a file is provided in the upload request.
     
     Args:
-        file: The uploaded file object
+        file: The uploaded file object.
         
     Raises:
-        HTTPException: 400 Bad Request if no file is provided
+        HTTPException: 400 Bad Request if no file is provided.
     """
     if not file:
         logger.error("No file provided in upload request")
@@ -41,13 +43,13 @@ def validate_content_type(file: UploadFile) -> str:
     Validate that the file has a valid content type.
     
     Args:
-        file: The uploaded file object
+        file: The uploaded file object.
         
     Returns:
-        str: The validated content type
+        str: The validated content type.
         
     Raises:
-        HTTPException: 400 Bad Request if content type is missing or invalid
+        HTTPException: 400 Bad Request if content type is missing or invalid.
     """
     if not file.content_type:
         logger.error("File has no content type")
@@ -71,14 +73,14 @@ def validate_file_extension(file: UploadFile, content_type: str) -> str:
     Validate that the file has a valid extension that matches the content type.
     
     Args:
-        file: The uploaded file object
-        content_type: The validated content type
+        file: The uploaded file object.
+        content_type: The validated content type.
         
     Returns:
-        str: The validated file extension (with leading dot)
+        str: The validated file extension (with leading dot).
         
     Raises:
-        HTTPException: 400 Bad Request if extension is missing, invalid, or doesn't match content type
+        HTTPException: 400 Bad Request if extension is missing, invalid, or doesn't match content type.
     """
     file_extension = Path(file.filename).suffix.lower() if file.filename else ""
     
@@ -106,11 +108,11 @@ def validate_file_size(file_size: int, max_size: int) -> None:
     Validate that the file size is within allowed limits.
     
     Args:
-        file_size: Size of the file in bytes
-        max_size: Maximum allowed file size in bytes
+        file_size: Size of the file in bytes.
+        max_size: Maximum allowed file size in bytes.
         
     Raises:
-        HTTPException: 400 Bad Request if file is empty, 413 Payload Too Large if exceeds max size
+        HTTPException: 400 Bad Request if file is empty, 413 Payload Too Large if exceeds max size.
     """
     if file_size == 0:
         logger.error("Empty file uploaded")
@@ -138,14 +140,14 @@ def validate_upload_file(file: UploadFile, max_size: int) -> Tuple[str, str]:
     4. File size (requires file content to be read)
     
     Args:
-        file: The uploaded file object
-        max_size: Maximum allowed file size in bytes
+        file: The uploaded file object.
+        max_size: Maximum allowed file size in bytes.
         
     Returns:
-        Tuple[str, str]: A tuple of (content_type, file_extension)
+        Tuple[str, str]: A tuple of (content_type, file_extension).
         
     Raises:
-        HTTPException: Various status codes depending on validation failure
+        HTTPException: Various status codes depending on validation failure.
     """
     validate_file_present(file)
     content_type = validate_content_type(file)

@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 
 import httpx
 
-from config import (
+from core.config import (
     PAPERLESS_NGX_URL,
     PAPERLESS_NGX_API_TOKEN,
     PAPERLESS_NGX_TIMEOUT,
@@ -87,23 +87,23 @@ class PaperlessNgxService:
         5. Returns the upload result
         
         Args:
-            document_path: Path to the document file to upload
-            patient_name: Name of the patient
-            date: Date of the medical document (format: YYYY-MM-DD or any string)
-            hospital_name: Name of the hospital/clinic
-            json_extraction: JSON data extracted from the medical document
-            title: Optional custom title (if not provided, auto-generated)
-            correspondent_id: Optional correspondent ID in Paperless NGX
-            document_type_id: Optional document type ID in Paperless NGX
-            tag_ids: Optional list of tag IDs to associate with the document
+            document_path: Path to the document file to upload.
+            patient_name: Name of the patient.
+            date: Date of the medical document (format: YYYY-MM-DD or any string).
+            hospital_name: Name of the hospital/clinic.
+            json_extraction: JSON data extracted from the medical document.
+            title: Optional custom title (if not provided, auto-generated).
+            correspondent_id: Optional correspondent ID in Paperless NGX.
+            document_type_id: Optional document type ID in Paperless NGX.
+            tag_ids: Optional list of tag IDs to associate with the document.
             
         Returns:
-            dict: Response from Paperless NGX API with upload status
+            dict: Response from Paperless NGX API with upload status.
             
         Raises:
-            FileNotFoundError: If the document file doesn't exist
-            httpx.HTTPError: For HTTP request errors
-            ValueError: For validation errors
+            FileNotFoundError: If the document file doesn't exist.
+            httpx.HTTPError: For HTTP request errors.
+            ValueError: For validation errors.
         """
         document_path_obj = Path(document_path)
         
@@ -224,10 +224,10 @@ class PaperlessNgxService:
         Determine content type based on file extension.
         
         Args:
-            file_path: Path to the file
+            file_path: Path to the file.
             
         Returns:
-            str: MIME type for the file
+            str: MIME type for the file.
         """
         extension = file_path.suffix.lower()
         content_types = {
@@ -261,18 +261,18 @@ class PaperlessNgxService:
         from a medical info dictionary (e.g., from MedicalInfo schema).
         
         Args:
-            document_path: Path to the document file to upload
-            medical_info: Dictionary containing hospital_info, patient_info, and optionally biochemistry_results
-            title: Optional custom title
-            correspondent_id: Optional correspondent ID in Paperless NGX
-            document_type_id: Optional document type ID in Paperless NGX
-            tag_ids: Optional list of tag IDs to associate with the document
+            document_path: Path to the document file to upload.
+            medical_info: Dictionary containing hospital_info, patient_info, and optionally biochemistry_results.
+            title: Optional custom title.
+            correspondent_id: Optional correspondent ID in Paperless NGX.
+            document_type_id: Optional document type ID in Paperless NGX.
+            tag_ids: Optional list of tag IDs to associate with the document.
             
         Returns:
-            dict: Response from Paperless NGX API with upload status
+            dict: Response from Paperless NGX API with upload status.
             
         Raises:
-            ValueError: If required fields are missing from medical_info
+            ValueError: If required fields are missing from medical_info.
         """
         # Extract required information
         hospital_info = medical_info.get("hospital_info", {})

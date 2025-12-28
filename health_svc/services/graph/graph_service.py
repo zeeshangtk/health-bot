@@ -23,7 +23,7 @@ from typing import List, Optional
 
 import plotly.io as pio
 
-from api.schemas import HealthRecordResponse
+from schemas import HealthRecordResponse
 from services.graph.data_preparation_service import DataPreparationService
 from services.graph.plotly_builder import PlotlyBuilder
 
@@ -109,4 +109,3 @@ class GraphService:
             config=self._builder.get_mobile_config()
         )
         return self._builder.inject_mobile_css(html)
-

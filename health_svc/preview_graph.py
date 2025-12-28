@@ -29,7 +29,7 @@ from datetime import datetime, timedelta
 # Ensure the package is importable when running from health_svc directory
 sys.path.insert(0, str(Path(__file__).parent))
 
-from api.schemas import HealthRecordResponse
+from schemas import HealthRecordResponse
 from services.graph import GraphService
 
 

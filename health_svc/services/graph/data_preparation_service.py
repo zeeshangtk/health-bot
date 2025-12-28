@@ -17,7 +17,7 @@ from datetime import datetime
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from api.schemas import HealthRecordResponse
+from schemas import HealthRecordResponse
 from services.graph.metric_registry import (
     MetricConfig,
     get_metric_config,

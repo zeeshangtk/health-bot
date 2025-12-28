@@ -12,8 +12,8 @@ from fastapi.testclient import TestClient
 from fastapi import FastAPI, UploadFile, File
 from fastapi import APIRouter, HTTPException, status
 
-from api.schemas import ImageUploadResponse
-from config import UPLOAD_DIR, UPLOAD_MAX_SIZE
+from schemas import ImageUploadResponse
+from core.config import UPLOAD_DIR, UPLOAD_MAX_SIZE
 from tasks.upload_tasks import process_uploaded_file
 from services.upload_service import UploadService
 
@@ -42,7 +42,7 @@ def test_app(temp_upload_dir):
     
     # Create test router with test upload service
     from fastapi import APIRouter, UploadFile, File
-    from api.schemas import ImageUploadResponse
+    from schemas import ImageUploadResponse
     
     records_router = APIRouter(prefix="/api/v1/records", tags=["Health Records"])
     

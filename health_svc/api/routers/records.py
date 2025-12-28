@@ -5,13 +5,12 @@ import logging
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Response, Form
 from typing import Optional, List
 
-from api.schemas import (
+from schemas import (
     HealthRecordCreate,
     HealthRecordResponse,
     ImageUploadResponse
 )
-from services.health_service import HealthService
-from services.upload_service import UploadService
+from services import HealthService, UploadService
 from services.graph import GraphService
 
 # Configure logging
@@ -163,4 +162,3 @@ async def upload_image(
         message="Image uploaded successfully",
         task_id=task_id
     )
-
