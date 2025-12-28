@@ -240,30 +240,64 @@ class GraphService:
         fig = go.Figure()
         fig.update_layout(
             title=dict(
-                text=f"No health records found for {patient_name}",
-                font=dict(size=18, color='#424242')
+                text=f"<b>Health Records</b><br><sup>{patient_name}</sup>",
+                font=dict(size=20, color='#212121'),
+                x=0.5,
+                xanchor='center',
             ),
-            xaxis_title="Date",
-            yaxis_title="Value",
-            height=400,
+            xaxis=dict(
+                showgrid=False,
+                showticklabels=False,
+                zeroline=False,
+            ),
+            yaxis=dict(
+                showgrid=False,
+                showticklabels=False,
+                zeroline=False,
+            ),
+            height=450,
             autosize=True,
-            margin=dict(l=50, r=30, t=60, b=50),
+            margin=dict(l=50, r=50, t=80, b=50),
             template="plotly_white",
-            annotations=[{
-                'text': 'Upload lab reports to see your health trends here',
-                'xref': 'paper',
-                'yref': 'paper',
-                'x': 0.5,
-                'y': 0.5,
-                'showarrow': False,
-                'font': {'size': 14, 'color': '#757575'}
-            }]
+            paper_bgcolor='#FAFAFA',
+            plot_bgcolor='#FFFFFF',
+            annotations=[
+                {
+                    'text': '📊',
+                    'xref': 'paper',
+                    'yref': 'paper',
+                    'x': 0.5,
+                    'y': 0.6,
+                    'showarrow': False,
+                    'font': {'size': 48}
+                },
+                {
+                    'text': '<b>No health records yet</b>',
+                    'xref': 'paper',
+                    'yref': 'paper',
+                    'x': 0.5,
+                    'y': 0.42,
+                    'showarrow': False,
+                    'font': {'size': 18, 'color': '#424242'}
+                },
+                {
+                    'text': 'Upload a lab report to see your health trends',
+                    'xref': 'paper',
+                    'yref': 'paper',
+                    'x': 0.5,
+                    'y': 0.32,
+                    'showarrow': False,
+                    'font': {'size': 14, 'color': '#757575'}
+                }
+            ]
         )
-        return pio.to_html(
+        
+        html_content = pio.to_html(
             fig, 
             include_plotlyjs='cdn',
             config=self._get_mobile_config()
         )
+        return self._inject_mobile_css(html_content)
     
     def _get_default_visible_metrics(self, available_metrics: List[str]) -> List[str]:
         """
@@ -320,7 +354,8 @@ class GraphService:
         """
         Prepare data for a single trace.
         
-        Returns dict with timestamps, values, units, and formatted dates.
+        Returns dict with timestamps, values, units, formatted dates,
+        percent changes, and abnormal status for each value.
         """
         # Parse and sort by datetime
         records_with_dt = []
@@ -348,12 +383,60 @@ class GraphService:
         unique_units = list(set([u for u in units if u]))
         unit = unique_units[0] if unique_units else self._get_default_unit(record_type)
         
+        # Calculate percent change from previous value
+        percent_changes = self._calculate_percent_changes(values)
+        
+        # Determine which values are abnormal (outside normal range)
+        is_abnormal = self._check_abnormal_values(record_type, values)
+        
         return {
             'timestamps': timestamps,
             'values': values,
             'unit': unit,
             'formatted_dates': formatted_dates,
+            'percent_changes': percent_changes,
+            'is_abnormal': is_abnormal,
         }
+    
+    def _calculate_percent_changes(self, values: List[float]) -> List[str]:
+        """
+        Calculate percent change from previous value for each data point.
+        
+        Returns list of formatted strings like "+5.2%", "-3.1%", or "" for first value.
+        """
+        changes = []
+        for i, val in enumerate(values):
+            if i == 0:
+                changes.append("")  # No previous value
+            else:
+                prev = values[i - 1]
+                if prev != 0:
+                    pct = ((val - prev) / prev) * 100
+                    if pct > 0:
+                        changes.append(f"+{pct:.1f}%")
+                    else:
+                        changes.append(f"{pct:.1f}%")
+                else:
+                    changes.append("")
+        return changes
+    
+    def _check_abnormal_values(self, record_type: str, values: List[float]) -> List[bool]:
+        """
+        Check which values are outside the normal reference range.
+        
+        Returns list of booleans - True if abnormal, False if normal or unknown.
+        """
+        normalized = record_type.lower()
+        
+        if normalized not in NORMAL_RANGES:
+            return [False] * len(values)
+        
+        min_normal, max_normal, _ = NORMAL_RANGES[normalized]
+        
+        return [
+            not (min_normal <= val <= max_normal)
+            for val in values
+        ]
     
     def _get_default_unit(self, record_type: str) -> str:
         """Get default unit for a metric type."""
@@ -401,24 +484,51 @@ class GraphService:
         trace_data: Dict[str, Any],
         is_visible: bool
     ) -> go.Scatter:
-        """Create a Plotly trace with semantic styling."""
-        color = self._get_metric_color(record_type)
+        """Create a Plotly trace with semantic styling and abnormal value highlighting."""
+        base_color = self._get_metric_color(record_type)
         unit = trace_data['unit']
+        values = trace_data['values']
+        is_abnormal = trace_data.get('is_abnormal', [False] * len(values))
+        percent_changes = trace_data.get('percent_changes', [''] * len(values))
         
         # Create trace name with unit
         trace_name = f"{record_type} ({unit})" if unit else record_type
         
-        # Build custom hover template with formatted date
+        # Create per-point marker colors (red border for abnormal values)
+        marker_colors = []
+        marker_line_colors = []
+        marker_symbols = []
+        
+        for abnormal in is_abnormal:
+            if abnormal:
+                marker_colors.append('#FFEBEE')  # Light red fill for abnormal
+                marker_line_colors.append('#E53935')  # Red border for abnormal
+                marker_symbols.append('circle')
+            else:
+                marker_colors.append(base_color)
+                marker_line_colors.append('white')
+                marker_symbols.append('circle')
+        
+        # Build custom data for hover (combine date and percent change)
+        custom_data = []
+        for i, (date, pct) in enumerate(zip(trace_data['formatted_dates'], percent_changes)):
+            if pct:
+                custom_data.append(f"{date}<br>Change: {pct}")
+            else:
+                custom_data.append(date)
+        
+        # Build custom hover template
+        # Note: customdata now includes date + optional percent change
         hovertemplate = (
             f"<b>{record_type}</b><br>"
-            "<b>%{customdata}</b><br>"  # Formatted date
-            f"Value: %{{y:.2f}} {unit}<br>"
+            "%{customdata}<br>"  # Formatted date + percent change
+            f"Value: %{{y:.2f}} {unit}"
             "<extra></extra>"
         )
         
         return go.Scatter(
             x=trace_data['timestamps'],
-            y=trace_data['values'],
+            y=values,
             mode='lines+markers',
             name=trace_name,
             visible=True if is_visible else "legendonly",
@@ -426,19 +536,19 @@ class GraphService:
             line=dict(
                 width=3.5,           # Thicker for mobile visibility
                 shape='linear',
-                color=color,
+                color=base_color,
             ),
             marker=dict(
                 size=12,             # Larger markers for touch
-                color=color,
+                color=marker_colors,
                 line=dict(
-                    width=2,
-                    color='white'
+                    width=2.5,
+                    color=marker_line_colors
                 ),
-                symbol='circle',
+                symbol=marker_symbols,
             ),
             connectgaps=True,
-            customdata=trace_data['formatted_dates'],
+            customdata=custom_data,
             hovertemplate=hovertemplate,
         )
     
@@ -573,13 +683,13 @@ class GraphService:
             ),
             
             # Sizing - taller for mobile scrolling
-            height=650,
+            height=680,
             autosize=True,
             margin=dict(
                 l=55,
                 r=55,
                 t=100,
-                b=140,  # Extra space for legend
+                b=160,  # Extra space for legend + helper text
             ),
             
             # Template and colors
@@ -597,6 +707,18 @@ class GraphService:
                 font=dict(size=13, color='#212121'),
                 namelength=-1,  # Show full name
             ),
+        )
+        
+        # Add legend helper text
+        fig.add_annotation(
+            text="<i>Tap legend items to show/hide metrics • Red-bordered points are outside normal range</i>",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=-0.22,
+            showarrow=False,
+            font=dict(size=11, color='#9E9E9E'),
+            xanchor='center',
         )
     
     def _get_mobile_config(self) -> Dict[str, Any]:
