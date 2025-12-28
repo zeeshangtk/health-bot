@@ -97,9 +97,10 @@ class TestGeminiServiceInit:
                 mock_model.assert_called_once_with('gemini-flash-latest')
                 assert service.api_key == mock_api_key
     
-    def test_init_with_env_var(self, mock_api_key):
-        """Test initialization with API key from environment variable."""
-        with patch.dict(os.environ, {"GEMINI_API_KEY": mock_api_key}):
+    def test_init_with_settings(self, mock_api_key):
+        """Test initialization with API key from settings."""
+        with patch('services.gemini_service.settings') as mock_settings:
+            mock_settings.gemini_api_key = mock_api_key
             with patch('services.gemini_service.genai.configure') as mock_configure:
                 with patch('services.gemini_service.genai.GenerativeModel') as mock_model:
                     service = GeminiService()
@@ -110,7 +111,8 @@ class TestGeminiServiceInit:
     
     def test_init_without_api_key_raises_error(self):
         """Test that initialization without API key raises ValueError."""
-        with patch.dict(os.environ, {}, clear=True):
+        with patch('services.gemini_service.settings') as mock_settings:
+            mock_settings.gemini_api_key = ""
             with pytest.raises(ValueError, match="GEMINI_API_KEY"):
                 GeminiService()
     

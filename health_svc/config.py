@@ -1,53 +1,114 @@
 """
 Configuration module for Health Service API service.
+Uses Pydantic BaseSettings for validation - app fails fast if required config is missing.
 """
-import os
 from pathlib import Path
+from typing import List
 
-# Database Configuration
-DATABASE_DIR = os.getenv("HEALTH_SVC_DB_DIR", "data")
-DATABASE_FILE = os.getenv("HEALTH_SVC_DB_FILE", "health_bot.db")
-DATABASE_PATH = os.path.join(DATABASE_DIR, DATABASE_FILE)
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Ensure database directory exists
-Path(DATABASE_DIR).mkdir(parents=True, exist_ok=True)
 
-# API Configuration
-API_HOST = os.getenv("HEALTH_SVC_HOST", "0.0.0.0")
-API_PORT = int(os.getenv("HEALTH_SVC_PORT", "8000"))
-API_RELOAD = os.getenv("HEALTH_SVC_RELOAD", "false").lower() == "true"
+class Settings(BaseSettings):
+    """
+    Application settings with validation.
+    Required fields will cause the app to fail fast if not provided.
+    """
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+    
+    # Database Configuration
+    health_svc_db_dir: str = Field(default="data", description="Database directory")
+    health_svc_db_file: str = Field(default="health_bot.db", description="Database filename")
+    
+    # API Configuration
+    health_svc_host: str = Field(default="0.0.0.0", description="API host")
+    health_svc_port: int = Field(default=8000, description="API port")
+    health_svc_reload: bool = Field(default=False, description="Enable hot reload")
+    
+    # Upload Configuration
+    health_svc_upload_dir: str = Field(default="uploads", description="Upload directory")
+    health_svc_upload_max_size: int = Field(default=10485760, description="Max upload size in bytes (10MB)")
+    
+    # Redis & Celery Configuration
+    health_svc_redis_url: str = Field(default="redis://localhost:6379", description="Redis URL")
+    health_svc_redis_db: int = Field(default=0, description="Redis database number")
+    health_svc_celery_task_serializer: str = Field(default="json", description="Celery task serializer")
+    health_svc_celery_result_serializer: str = Field(default="json", description="Celery result serializer")
+    health_svc_celery_accept_content: str = Field(default="json", description="Celery accepted content types (comma-separated)")
+    health_svc_celery_timezone: str = Field(default="UTC", description="Celery timezone")
+    health_svc_celery_enable_utc: bool = Field(default=True, description="Enable UTC for Celery")
+    
+    # Paperless NGX Configuration (Optional)
+    paperless_ngx_url: str = Field(default="http://localhost:8000", description="Paperless NGX URL")
+    paperless_ngx_api_token: str = Field(default="", description="Paperless NGX API token")
+    paperless_ngx_timeout: int = Field(default=30, description="Paperless NGX timeout in seconds")
+    paperless_ngx_verify_ssl: bool = Field(default=True, description="Verify SSL for Paperless NGX")
+    
+    # Google Gemini API Configuration (Required for document parsing)
+    gemini_api_key: str = Field(default="", description="Google Gemini API key")
+    
+    @property
+    def database_path(self) -> str:
+        """Get the full database path."""
+        return str(Path(self.health_svc_db_dir) / self.health_svc_db_file)
+    
+    @property
+    def celery_broker_url(self) -> str:
+        """Get the Celery broker URL with database selection."""
+        return f"{self.health_svc_redis_url}/{self.health_svc_redis_db}"
+    
+    @property
+    def celery_result_backend(self) -> str:
+        """Get the Celery result backend URL with database selection."""
+        return f"{self.health_svc_redis_url}/{self.health_svc_redis_db}"
+    
+    @property
+    def celery_accept_content_list(self) -> List[str]:
+        """Get the Celery accepted content types as a list."""
+        return [c.strip() for c in self.health_svc_celery_accept_content.split(",")]
+    
+    def ensure_directories(self) -> None:
+        """Ensure required directories exist."""
+        Path(self.health_svc_db_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.health_svc_upload_dir).mkdir(parents=True, exist_ok=True)
 
-# Upload Configuration
-UPLOAD_DIR = os.getenv("HEALTH_SVC_UPLOAD_DIR", "uploads")
-UPLOAD_MAX_SIZE = int(os.getenv("HEALTH_SVC_UPLOAD_MAX_SIZE", "10485760"))  # 10MB in bytes
 
-# Ensure upload directory exists
-Path(UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+# Create global settings instance - fails fast if required config is missing
+settings = Settings()
 
-# Celery and Redis Configuration
-REDIS_URL = os.getenv("HEALTH_SVC_REDIS_URL", "redis://localhost:6379")
-REDIS_DB = int(os.getenv("HEALTH_SVC_REDIS_DB", "0"))
+# Ensure directories exist on import
+settings.ensure_directories()
 
-# Build Redis connection string with database selection
-if REDIS_DB > 0:
-    CELERY_BROKER_URL = f"{REDIS_URL}/{REDIS_DB}"
-    CELERY_RESULT_BACKEND = f"{REDIS_URL}/{REDIS_DB}"
-else:
-    CELERY_BROKER_URL = f"{REDIS_URL}/0"
-    CELERY_RESULT_BACKEND = f"{REDIS_URL}/0"
+# Backwards-compatible exports for existing code
+DATABASE_DIR = settings.health_svc_db_dir
+DATABASE_FILE = settings.health_svc_db_file
+DATABASE_PATH = settings.database_path
 
-CELERY_TASK_SERIALIZER = os.getenv("HEALTH_SVC_CELERY_TASK_SERIALIZER", "json")
-CELERY_RESULT_SERIALIZER = os.getenv("HEALTH_SVC_CELERY_RESULT_SERIALIZER", "json")
-CELERY_ACCEPT_CONTENT = os.getenv("HEALTH_SVC_CELERY_ACCEPT_CONTENT", "json").split(",")
-CELERY_TIMEZONE = os.getenv("HEALTH_SVC_CELERY_TIMEZONE", "UTC")
-CELERY_ENABLE_UTC = os.getenv("HEALTH_SVC_CELERY_ENABLE_UTC", "true").lower() == "true"
+API_HOST = settings.health_svc_host
+API_PORT = settings.health_svc_port
+API_RELOAD = settings.health_svc_reload
 
-# Paperless NGX Configuration
-PAPERLESS_NGX_URL = os.getenv("PAPERLESS_NGX_URL", "http://localhost:8000")
-PAPERLESS_NGX_API_TOKEN = os.getenv("PAPERLESS_NGX_API_TOKEN", "")
-PAPERLESS_NGX_TIMEOUT = int(os.getenv("PAPERLESS_NGX_TIMEOUT", "30"))  # seconds
-PAPERLESS_NGX_VERIFY_SSL = os.getenv("PAPERLESS_NGX_VERIFY_SSL", "true").lower() == "true"
+UPLOAD_DIR = settings.health_svc_upload_dir
+UPLOAD_MAX_SIZE = settings.health_svc_upload_max_size
 
-# Google Gemini API Configuration
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+REDIS_URL = settings.health_svc_redis_url
+REDIS_DB = settings.health_svc_redis_db
+CELERY_BROKER_URL = settings.celery_broker_url
+CELERY_RESULT_BACKEND = settings.celery_result_backend
+CELERY_TASK_SERIALIZER = settings.health_svc_celery_task_serializer
+CELERY_RESULT_SERIALIZER = settings.health_svc_celery_result_serializer
+CELERY_ACCEPT_CONTENT = settings.celery_accept_content_list
+CELERY_TIMEZONE = settings.health_svc_celery_timezone
+CELERY_ENABLE_UTC = settings.health_svc_celery_enable_utc
 
+PAPERLESS_NGX_URL = settings.paperless_ngx_url
+PAPERLESS_NGX_API_TOKEN = settings.paperless_ngx_api_token
+PAPERLESS_NGX_TIMEOUT = settings.paperless_ngx_timeout
+PAPERLESS_NGX_VERIFY_SSL = settings.paperless_ngx_verify_ssl
+
+GEMINI_API_KEY = settings.gemini_api_key

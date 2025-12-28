@@ -10,7 +10,7 @@ from typing import Dict, Any
 import google.generativeai as genai
 from PIL import Image
 
-from config import GEMINI_API_KEY
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -18,17 +18,17 @@ logger = logging.getLogger(__name__)
 class GeminiService:
     """Service for extracting structured data from medical reports using Gemini AI."""
     
-    def __init__(self, api_key: str = GEMINI_API_KEY):
+    def __init__(self, api_key: str | None = None):
         """
         Initialize the Gemini service.
         
         Args:
-            api_key: Google Gemini API key. If not provided, loads from GEMINI_API_KEY env var from config.
+            api_key: Google Gemini API key. If not provided, loads from settings.
             
         Raises:
             ValueError: If API key is not provided.
         """
-        self.api_key = api_key
+        self.api_key = api_key or settings.gemini_api_key
         if not self.api_key:
             raise ValueError(
                 "GEMINI_API_KEY environment variable is required. "

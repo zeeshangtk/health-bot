@@ -1,18 +1,37 @@
 """
-Configuration module for health bot.
-Updated to use REST API instead of direct database access.
+Configuration module for Telegram health bot.
+Uses Pydantic BaseSettings for validation - app fails fast if required config is missing.
 """
-import os
 from typing import List
 
-# Telegram Bot Token
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Health Service API Configuration
-HEALTH_SVC_API_URL = os.getenv(
-    "HEALTH_SVC_API_URL",
-    "http://localhost:8000"
-)
+
+class Settings(BaseSettings):
+    """
+    Application settings with validation.
+    Required fields will cause the app to fail fast if not provided.
+    """
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+    
+    # Telegram Bot Token (Required)
+    telegram_token: str = Field(
+        ...,  # Required - no default means fail fast if missing
+        description="Telegram bot token from @BotFather"
+    )
+    
+    # Health Service API Configuration
+    health_svc_api_url: str = Field(
+        default="http://localhost:8000",
+        description="URL of the Health Service API"
+    )
+
 
 # Supported Record Types
 SUPPORTED_RECORD_TYPES: List[str] = [
@@ -24,15 +43,22 @@ SUPPORTED_RECORD_TYPES: List[str] = [
 ]
 
 
-def load_env():
+# Create global settings instance - fails fast if required config is missing
+settings = Settings()
+
+# Backwards-compatible exports for existing code
+TELEGRAM_TOKEN = settings.telegram_token
+HEALTH_SVC_API_URL = settings.health_svc_api_url
+
+
+def load_env() -> bool:
     """
-    Load configuration from environment variables.
+    Check if configuration is valid.
     
-    Environment variables:
-        TELEGRAM_TOKEN: The Telegram bot token (required)
-        HEALTH_SVC_API_URL: URL of the Health Service API (default: http://localhost:8000)
+    With Pydantic BaseSettings, this always returns True because
+    the app would have already failed if TELEGRAM_TOKEN was missing.
     
     Returns:
-        bool: True if token is available, False otherwise
+        bool: True if configuration is valid
     """
-    return TELEGRAM_TOKEN is not None
+    return True
