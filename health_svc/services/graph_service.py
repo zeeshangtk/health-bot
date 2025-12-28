@@ -151,7 +151,41 @@ RANGE_BAND_COLORS: Dict[str, str] = {
     'sugar': 'rgba(67, 160, 71, 0.12)',        # Green tint
     'electrolyte': 'rgba(142, 36, 170, 0.12)', # Purple tint
     'blood': 'rgba(229, 57, 53, 0.12)',        # Red tint
+    'liver': 'rgba(251, 140, 0, 0.12)',        # Orange tint
+    'lipid': 'rgba(0, 137, 123, 0.12)',        # Teal tint
     'other': 'rgba(117, 117, 117, 0.12)',      # Gray tint
+}
+
+# Category display names with emoji icons for grouped legend
+CATEGORY_DISPLAY: Dict[str, Dict[str, str]] = {
+    'kidney': {
+        'title': '🔵 Kidney Function',
+        'color': '#1E88E5',
+    },
+    'sugar': {
+        'title': '🟢 Blood Sugar',
+        'color': '#43A047',
+    },
+    'electrolyte': {
+        'title': '🟣 Electrolytes',
+        'color': '#8E24AA',
+    },
+    'blood': {
+        'title': '🔴 Blood/Hematology',
+        'color': '#E53935',
+    },
+    'liver': {
+        'title': '🟠 Liver Function',
+        'color': '#FB8C00',
+    },
+    'lipid': {
+        'title': '🩵 Lipids',
+        'color': '#00897B',
+    },
+    'other': {
+        'title': '⚪ Other',
+        'color': '#757575',
+    },
 }
 
 
@@ -469,6 +503,8 @@ class GraphService:
         sugar_keywords = ['sugar', 'glucose', 'hba1c', 'blood sugar']
         electrolyte_keywords = ['sodium', 'potassium', 'chloride', 'calcium', 'phosphorus', 'magnesium']
         blood_keywords = ['haemoglobin', 'hemoglobin', 'hematocrit', 'rbc', 'wbc', 'platelets']
+        liver_keywords = ['bilirubin', 'sgpt', 'alt', 'sgot', 'ast', 'alkaline phosphatase', 'ggt']
+        lipid_keywords = ['cholesterol', 'triglycerides', 'hdl', 'ldl', 'vldl']
         
         if any(kw in normalized for kw in kidney_keywords):
             return 'kidney'
@@ -478,6 +514,10 @@ class GraphService:
             return 'electrolyte'
         elif any(kw in normalized for kw in blood_keywords):
             return 'blood'
+        elif any(kw in normalized for kw in liver_keywords):
+            return 'liver'
+        elif any(kw in normalized for kw in lipid_keywords):
+            return 'lipid'
         else:
             return 'other'
     
@@ -517,6 +557,10 @@ class GraphService:
         values = trace_data['values']
         is_abnormal = trace_data.get('is_abnormal', [False] * len(values))
         percent_changes = trace_data.get('percent_changes', [''] * len(values))
+        
+        # Get category for legend grouping
+        category = self._get_category(record_type)
+        category_info = CATEGORY_DISPLAY.get(category, CATEGORY_DISPLAY['other'])
         
         # Get trend arrow for legend name
         trend_arrow = self._get_trend_indicator(values)
@@ -576,6 +620,12 @@ class GraphService:
             name=trace_name,
             visible=True if is_visible else "legendonly",
             showlegend=True,
+            # Legend grouping by clinical category
+            legendgroup=category,
+            legendgrouptitle=dict(
+                text=category_info['title'],
+                font=dict(size=12, color='#424242'),
+            ),
             line=dict(
                 width=3.5,           # Thicker for mobile visibility
                 shape='linear',
@@ -713,7 +763,7 @@ class GraphService:
             # Hover mode
             hovermode='x unified',
             
-            # Legend - optimized for mobile touch
+            # Legend - optimized for mobile touch with grouped categories
             showlegend=True,
             legend=dict(
                 orientation="h",
@@ -721,24 +771,25 @@ class GraphService:
                 y=-0.12,
                 xanchor="center",
                 x=0.5,
-                font=dict(size=13, color='#424242'),
+                font=dict(size=12, color='#424242'),
                 itemclick="toggle",
                 itemdoubleclick="toggleothers",
+                groupclick="toggleitem",  # Click toggles individual items, not whole group
                 bgcolor="rgba(255,255,255,0.95)",
                 bordercolor="rgba(0,0,0,0.15)",
                 borderwidth=1,
                 itemsizing='constant',
-                tracegroupgap=8,
+                tracegroupgap=12,  # More space between groups
             ),
             
             # Sizing - taller for mobile scrolling
-            height=720,
+            height=750,
             autosize=True,
             margin=dict(
                 l=55,
                 r=60,   # Slightly more space for summary panel
                 t=110,  # Extra space for summary panel
-                b=160,  # Extra space for legend + helper text
+                b=180,  # Extra space for grouped legend + helper text
             ),
             
             # Template and colors
@@ -760,13 +811,13 @@ class GraphService:
         
         # Add legend helper text
         fig.add_annotation(
-            text="<i>Tap legend items to show/hide metrics • Red-bordered points are outside normal range</i>",
+            text="<i>Tap items to show/hide • Metrics grouped by category • Red borders = outside normal range</i>",
             xref="paper",
             yref="paper",
             x=0.5,
-            y=-0.22,
+            y=-0.24,
             showarrow=False,
-            font=dict(size=11, color='#9E9E9E'),
+            font=dict(size=10, color='#9E9E9E'),
             xanchor='center',
         )
     
