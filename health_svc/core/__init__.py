@@ -28,6 +28,27 @@ from core.config import (
     GEMINI_API_KEY,
 )
 
+# Metric registry exports
+from core.metric_registry import (
+    # Core API
+    MetricDefinition,
+    MetricConfig,  # Alias for backward compatibility
+    get_metric,
+    get_metric_config,
+    list_metrics,
+    is_abnormal,
+    get_normal_range,
+    # Utility functions
+    parse_metric_value,
+    parse_timestamp,
+    calculate_trend,
+    format_metric_value,
+    # Constants
+    DEFAULT_METRIC_CONFIG,
+    RANGE_BAND_COLORS,
+    DEFAULT_VISIBLE_METRICS,
+)
+
 __all__ = [
     "settings",
     "Settings",
@@ -54,5 +75,20 @@ __all__ = [
     "PAPERLESS_NGX_TIMEOUT",
     "PAPERLESS_NGX_VERIFY_SSL",
     "GEMINI_API_KEY",
+    # Metric registry exports
+    "MetricDefinition",
+    "MetricConfig",
+    "get_metric",
+    "get_metric_config",
+    "list_metrics",
+    "is_abnormal",
+    "get_normal_range",
+    "parse_metric_value",
+    "parse_timestamp",
+    "calculate_trend",
+    "format_metric_value",
+    "DEFAULT_METRIC_CONFIG",
+    "RANGE_BAND_COLORS",
+    "DEFAULT_VISIBLE_METRICS",
 ]
 

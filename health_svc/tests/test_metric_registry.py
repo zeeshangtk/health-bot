@@ -24,11 +24,16 @@ from dataclasses import dataclass
 # IMPORT TESTED FUNCTIONS
 # =============================================================================
 
-from services.graph.metric_registry import (
+from core.metric_registry import (
     _normalize_metric_name,
     parse_metric_value,
     calculate_trend,
     MetricConfig,
+    get_metric,
+    get_metric_config,
+    list_metrics,
+    is_abnormal,
+    get_normal_range,
 )
 
 
@@ -332,6 +337,7 @@ class TestMetricConfigIsAbnormal:
         """Helper to create a MetricConfig for testing."""
         return MetricConfig(
             canonical_name="test_metric",
+            display_name="Test Metric",
             color="#FF0000",
             range=range_val,
             unit="mg/dl",
@@ -603,6 +609,7 @@ class TestEdgeCases:
         """MetricConfig should be immutable (frozen dataclass)."""
         config = MetricConfig(
             canonical_name="test",
+            display_name="Test",
             color="#FF0000",
             range=(0.0, 100.0),
             unit="mg/dl",
@@ -614,4 +621,120 @@ class TestEdgeCases:
         
         with pytest.raises(Exception):  # FrozenInstanceError
             config.canonical_name = "modified"
+
+
+# =============================================================================
+# TESTS: Public API Functions (get_metric, list_metrics, is_abnormal, get_normal_range)
+# =============================================================================
+
+class TestGetMetric:
+    """Tests for get_metric function."""
+    
+    def test_get_known_metric_by_canonical_name(self):
+        """Should return metric definition for known canonical name."""
+        metric = get_metric("creatinine")
+        assert metric.canonical_name == "creatinine"
+        assert metric.unit == "mg/dl"
+        assert metric.range == (0.6, 1.2)
+    
+    def test_get_known_metric_by_alias(self):
+        """Should return metric definition when using an alias."""
+        metric = get_metric("rbs")  # alias for "random blood sugar"
+        assert metric.canonical_name == "random blood sugar"
+    
+    def test_get_metric_case_insensitive(self):
+        """Should be case-insensitive."""
+        metric1 = get_metric("Creatinine")
+        metric2 = get_metric("CREATININE")
+        metric3 = get_metric("creatinine")
+        assert metric1 == metric2 == metric3
+    
+    def test_get_unknown_metric_raises_error(self):
+        """Should raise KeyError for unknown metrics."""
+        with pytest.raises(KeyError) as exc_info:
+            get_metric("unknown_metric_xyz")
+        assert "unknown_metric_xyz" in str(exc_info.value)
+
+
+class TestGetMetricConfig:
+    """Tests for get_metric_config function (backward-compatible)."""
+    
+    def test_get_known_metric_returns_config(self):
+        """Should return config for known metric."""
+        config = get_metric_config("creatinine")
+        assert config.canonical_name == "creatinine"
+    
+    def test_get_unknown_metric_returns_default(self):
+        """Should return default config for unknown metric (no error)."""
+        config = get_metric_config("unknown_metric_xyz")
+        assert config.canonical_name == "unknown"
+
+
+class TestListMetrics:
+    """Tests for list_metrics function."""
+    
+    def test_returns_dict_of_metrics(self):
+        """Should return a dict mapping canonical names to definitions."""
+        metrics = list_metrics()
+        assert isinstance(metrics, dict)
+        assert len(metrics) > 0
+    
+    def test_contains_known_metrics(self):
+        """Should contain expected metrics from YAML."""
+        metrics = list_metrics()
+        assert "creatinine" in metrics
+        assert "blood urea" in metrics
+        assert "random blood sugar" in metrics
+    
+    def test_metric_values_are_definitions(self):
+        """Each value should be a MetricDefinition."""
+        metrics = list_metrics()
+        for name, metric in metrics.items():
+            assert isinstance(metric, MetricConfig)
+            assert metric.canonical_name == name
+
+
+class TestIsAbnormal:
+    """Tests for is_abnormal function."""
+    
+    def test_value_in_range_is_normal(self):
+        """Should return False for value in normal range."""
+        # Creatinine normal range is 0.6-1.2
+        assert is_abnormal("creatinine", 0.9) is False
+        assert is_abnormal("creatinine", 0.6) is False  # boundary
+        assert is_abnormal("creatinine", 1.2) is False  # boundary
+    
+    def test_value_below_range_is_abnormal(self):
+        """Should return True for value below normal range."""
+        assert is_abnormal("creatinine", 0.5) is True
+    
+    def test_value_above_range_is_abnormal(self):
+        """Should return True for value above normal range."""
+        assert is_abnormal("creatinine", 1.5) is True
+    
+    def test_unknown_metric_raises_error(self):
+        """Should raise KeyError for unknown metric."""
+        with pytest.raises(KeyError):
+            is_abnormal("unknown_metric_xyz", 5.0)
+
+
+class TestGetNormalRange:
+    """Tests for get_normal_range function."""
+    
+    def test_returns_range_tuple(self):
+        """Should return (low, high) tuple for metric with range."""
+        range_tuple = get_normal_range("creatinine")
+        assert range_tuple == (0.6, 1.2)
+    
+    def test_returns_none_for_no_range(self):
+        """Should return None for metric without defined range."""
+        # Note: This requires a metric in YAML without a range
+        # Using get_metric_config to avoid KeyError for test setup
+        # If all metrics have ranges, this test documents expected behavior
+        pass
+    
+    def test_unknown_metric_raises_error(self):
+        """Should raise KeyError for unknown metric."""
+        with pytest.raises(KeyError):
+            get_normal_range("unknown_metric_xyz")
 

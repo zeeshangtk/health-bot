@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 
 import plotly.graph_objects as go
 
-from services.graph.metric_registry import (
+from core.metric_registry import (
     MetricConfig,
     get_metric_config,
     format_metric_value,

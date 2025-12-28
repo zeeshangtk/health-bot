@@ -18,7 +18,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from schemas import HealthRecordResponse
-from services.graph.metric_registry import (
+from core.metric_registry import (
     MetricConfig,
     get_metric_config,
     parse_timestamp,
