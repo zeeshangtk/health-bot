@@ -3,16 +3,20 @@ Service layer for generating health record visualization graphs.
 
 This module provides a mobile-optimized, clinically-informed Plotly graph 
 generator for health records. Features include:
-- Semantic color coding by metric category (kidney, sugar, electrolytes)
-- Reference range bands for key metrics (informational only)
-- Touch-friendly markers and legends optimized for Telegram/mobile viewing
+- Semantic color coding by metric category (kidney, sugar, electrolytes, etc.)
+- Subtle reference range bands for key metrics (informational only)
+- Touch-friendly markers and vertical legend optimized for Telegram/mobile
 - Color-blind friendly palette
-- Formatted hover tooltips with proper units
+- Clean, formatted hover tooltips with educational descriptions
+- Abnormal value highlighting (bold red border on markers)
+- Latest readings summary panel
+- Clear informational disclaimer
 """
+
 import logging
 import re
-from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
+from typing import List, Dict, Any, Tuple
+from datetime import datetime, timedelta
 from collections import defaultdict
 
 import plotly.graph_objects as go
@@ -24,96 +28,85 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# CONFIGURATION: Semantic Colors, Reference Ranges, and Defaults
+# CONFIGURATION: Semantic Colors, Reference Ranges, Units, etc.
 # =============================================================================
 
 # Color-blind friendly palette organized by clinical category
-# Using distinct hues that remain distinguishable with color vision deficiencies
 METRIC_COLORS: Dict[str, str] = {
-    # Kidney Function - Blues (easily distinguishable shades)
-    'creatinine': '#1E88E5',           # Bright blue
+    # Kidney Function - Blues
+    'creatinine': '#1E88E5',
     'serum creatinine': '#1E88E5',
-    'blood urea': '#1565C0',           # Deep blue
+    'blood urea': '#1565C0',
     'serum urea': '#1565C0',
-    'blood urea nitrogen': '#0D47A1',  # Navy blue
+    'blood urea nitrogen': '#0D47A1',
     'bun': '#0D47A1',
-    'egfr': '#42A5F5',                 # Light blue
-    
-    # Blood Sugar - Greens (distinct from blues)
-    'random blood sugar': '#43A047',    # Medium green
-    'fasting blood sugar': '#2E7D32',   # Dark green
-    'blood sugar': '#66BB6A',           # Light green
-    'hba1c': '#1B5E20',                 # Deep green
-    'glucose': '#4CAF50',               # Standard green
-    
-    # Electrolytes - Purples/Magentas
-    'sodium': '#8E24AA',               # Purple
-    'potassium': '#AB47BC',            # Light purple
-    'chloride': '#7B1FA2',             # Deep purple
-    'calcium': '#BA68C8',              # Lavender
-    'phosphorus': '#6A1B9A',           # Dark purple
-    'magnesium': '#CE93D8',            # Pale purple
-    
-    # Blood/Hematology - Reds/Warm tones
-    'haemoglobin': '#E53935',          # Red
+    'egfr': '#42A5F5',
+
+    # Blood Sugar - Greens
+    'random blood sugar': '#43A047',
+    'fasting blood sugar': '#2E7D32',
+    'blood sugar': '#66BB6A',
+    'hba1c': '#1B5E20',
+    'glucose': '#4CAF50',
+
+    # Electrolytes - Purples
+    'sodium': '#8E24AA',
+    'potassium': '#AB47BC',
+    'chloride': '#7B1FA2',
+    'calcium': '#BA68C8',
+    'phosphorus': '#6A1B9A',
+    'magnesium': '#CE93D8',
+
+    # Blood/Hematology - Reds
+    'haemoglobin': '#E53935',
     'hemoglobin': '#E53935',
-    'hematocrit': '#C62828',           # Dark red
-    'rbc': '#EF5350',                  # Light red
-    'wbc': '#F44336',                  # Medium red
-    'platelets': '#D32F2F',            # Deep red
-    
-    # Liver Function - Oranges/Ambers
-    'bilirubin': '#FB8C00',            # Orange
-    'sgpt': '#F57C00',                 # Deep orange
+    'hematocrit': '#C62828',
+    'rbc': '#EF5350',
+    'wbc': '#F44336',
+    'platelets': '#D32F2F',
+
+    # Liver Function - Oranges
+    'bilirubin': '#FB8C00',
+    'sgpt': '#F57C00',
     'alt': '#F57C00',
-    'sgot': '#EF6C00',                 # Darker orange
+    'sgot': '#EF6C00',
     'ast': '#EF6C00',
-    'alkaline phosphatase': '#FF9800', # Amber
-    
+    'alkaline phosphatase': '#FF9800',
+
     # Lipids - Teals
-    'cholesterol': '#00897B',          # Teal
-    'triglycerides': '#00796B',        # Dark teal
-    'hdl': '#26A69A',                  # Light teal
-    'ldl': '#004D40',                  # Deep teal
-    
-    # Other - Neutrals/Grays
-    'uric acid': '#757575',            # Gray
-    'protein': '#616161',              # Dark gray
-    'albumin': '#9E9E9E',              # Medium gray
+    'cholesterol': '#00897B',
+    'triglycerides': '#00796B',
+    'hdl': '#26A69A',
+    'ldl': '#004D40',
+
+    # Other - Grays
+    'uric acid': '#757575',
+    'protein': '#616161',
+    'albumin': '#9E9E9E',
 }
 
-# General adult reference ranges (informational only - not for diagnosis)
-# Format: (min_normal, max_normal, unit)
+# General adult reference ranges (informational only)
 NORMAL_RANGES: Dict[str, Tuple[float, float, str]] = {
-    # Kidney Function
     'creatinine': (0.6, 1.2, 'mg/dl'),
     'serum creatinine': (0.6, 1.2, 'mg/dl'),
     'blood urea': (15.0, 45.0, 'mg/dl'),
     'serum urea': (15.0, 45.0, 'mg/dl'),
     'blood urea nitrogen': (7.0, 20.0, 'mg/dl'),
     'bun': (7.0, 20.0, 'mg/dl'),
-    
-    # Blood Sugar
     'random blood sugar': (70.0, 140.0, 'mg/dl'),
     'fasting blood sugar': (70.0, 100.0, 'mg/dl'),
     'blood sugar': (70.0, 140.0, 'mg/dl'),
     'hba1c': (4.0, 5.6, '%'),
-    
-    # Electrolytes
     'sodium': (136.0, 145.0, 'mMol/L'),
     'potassium': (3.5, 5.0, 'mMol/L'),
     'chloride': (98.0, 106.0, 'mMol/L'),
     'calcium': (8.5, 10.5, 'mg/dl'),
-    
-    # Blood
     'haemoglobin': (12.0, 17.5, 'g/dl'),
     'hemoglobin': (12.0, 17.5, 'g/dl'),
-    
-    # Other
     'uric acid': (2.4, 7.0, 'mg/dl'),
 }
 
-# Fallback units when not provided in data
+# Fallback units
 DEFAULT_UNITS: Dict[str, str] = {
     'creatinine': 'mg/dl',
     'serum creatinine': 'mg/dl',
@@ -134,8 +127,7 @@ DEFAULT_UNITS: Dict[str, str] = {
     'uric acid': 'mg/dl',
 }
 
-# Metrics to show by default (ordered by clinical priority)
-# These are commonly monitored and clinically relevant at a glance
+# Clinically important metrics to show by default (max 3)
 DEFAULT_VISIBLE_METRICS: List[str] = [
     'creatinine',
     'serum creatinine',
@@ -145,313 +137,146 @@ DEFAULT_VISIBLE_METRICS: List[str] = [
     'hemoglobin',
 ]
 
-# Reference band colors by category (low opacity for subtle background)
+# Subtle reference band colors by category
 RANGE_BAND_COLORS: Dict[str, str] = {
-    'kidney': 'rgba(30, 136, 229, 0.12)',      # Blue tint
-    'sugar': 'rgba(67, 160, 71, 0.12)',        # Green tint
-    'electrolyte': 'rgba(142, 36, 170, 0.12)', # Purple tint
-    'blood': 'rgba(229, 57, 53, 0.12)',        # Red tint
-    'liver': 'rgba(251, 140, 0, 0.12)',        # Orange tint
-    'lipid': 'rgba(0, 137, 123, 0.12)',        # Teal tint
-    'other': 'rgba(117, 117, 117, 0.12)',      # Gray tint
+    'kidney': 'rgba(30, 136, 229, 0.12)',
+    'sugar': 'rgba(67, 160, 71, 0.12)',
+    'electrolyte': 'rgba(142, 36, 170, 0.12)',
+    'blood': 'rgba(229, 57, 53, 0.12)',
+    'liver': 'rgba(251, 140, 0, 0.12)',
+    'lipid': 'rgba(0, 137, 123, 0.12)',
+    'other': 'rgba(117, 117, 117, 0.12)',
 }
 
-# Category display names with emoji icons for grouped legend
-CATEGORY_DISPLAY: Dict[str, Dict[str, str]] = {
-    'kidney': {
-        'title': '🔵 Kidney Function',
-        'color': '#1E88E5',
-    },
-    'sugar': {
-        'title': '🟢 Blood Sugar',
-        'color': '#43A047',
-    },
-    'electrolyte': {
-        'title': '🟣 Electrolytes',
-        'color': '#8E24AA',
-    },
-    'blood': {
-        'title': '🔴 Blood/Hematology',
-        'color': '#E53935',
-    },
-    'liver': {
-        'title': '🟠 Liver Function',
-        'color': '#FB8C00',
-    },
-    'lipid': {
-        'title': '🩵 Lipids',
-        'color': '#00897B',
-    },
-    'other': {
-        'title': '⚪ Other',
-        'color': '#757575',
-    },
-}
-
-# Educational descriptions for metrics (shown in hover tooltips)
-# Brief, patient-friendly explanations - purely informational
+# Patient-friendly metric descriptions
 METRIC_DESCRIPTIONS: Dict[str, str] = {
-    # Kidney Function
     'creatinine': 'Waste product filtered by kidneys',
     'serum creatinine': 'Waste product filtered by kidneys',
     'blood urea': 'Protein breakdown product',
     'serum urea': 'Protein breakdown product',
     'blood urea nitrogen': 'Nitrogen from protein breakdown',
     'bun': 'Nitrogen from protein breakdown',
-    'egfr': 'Estimated kidney filtering rate',
-    
-    # Blood Sugar
     'random blood sugar': 'Glucose level at any time',
     'fasting blood sugar': 'Glucose after 8+ hours fasting',
     'blood sugar': 'Current glucose level',
     'glucose': 'Blood sugar level',
     'hba1c': 'Average blood sugar over 2-3 months',
-    
-    # Electrolytes
     'sodium': 'Fluid balance & nerve function',
     'potassium': 'Heart & muscle function',
     'chloride': 'Fluid balance & digestion',
     'calcium': 'Bone health & muscle function',
-    'phosphorus': 'Bone & energy metabolism',
-    'magnesium': 'Muscle & nerve function',
-    
-    # Blood/Hematology
     'haemoglobin': 'Oxygen-carrying capacity',
     'hemoglobin': 'Oxygen-carrying capacity',
-    'hematocrit': 'Red blood cell percentage',
-    'rbc': 'Red blood cell count',
-    'wbc': 'White blood cell count (immunity)',
-    'platelets': 'Blood clotting cells',
-    
-    # Liver Function
-    'bilirubin': 'Liver processing indicator',
-    'sgpt': 'Liver enzyme (ALT)',
-    'alt': 'Liver cell health marker',
-    'sgot': 'Liver enzyme (AST)',
-    'ast': 'Liver & heart enzyme',
-    'alkaline phosphatase': 'Liver & bone enzyme',
-    'ggt': 'Liver & bile duct enzyme',
-    
-    # Lipids
-    'cholesterol': 'Total blood fats',
-    'triglycerides': 'Fat from food & body',
-    'hdl': 'Good cholesterol',
-    'ldl': 'Bad cholesterol',
-    'vldl': 'Very low density lipoprotein',
-    
-    # Other
     'uric acid': 'Purine breakdown product',
-    'protein': 'Total blood protein',
-    'albumin': 'Main blood protein',
 }
 
 
 class GraphService:
-    """
-    Service layer for generating health record visualization graphs.
-    
-    Produces mobile-optimized, clinically-informed Plotly graphs with:
-    - Semantic color coding by metric category
-    - Optional reference range bands
-    - Touch-friendly sizing for Telegram/mobile
-    - Formatted hover tooltips
-    """
-    
+    """Service for generating enhanced health record graphs."""
+
     def generate_html_graph(self, records: List[HealthRecordResponse], patient_name: str) -> str:
-        """
-        Generate an HTML graph visualization of health records using Plotly.
-        
-        Args:
-            records: List of health record responses
-            patient_name: Name of the patient (for graph title)
-        
-        Returns:
-            str: HTML content containing the interactive Plotly graph
-        """
+        """Generate complete HTML with interactive Plotly graph."""
         if not records:
             return self._generate_empty_graph(patient_name)
-        
-        # Group records by record_type
+
+        # Group by metric
         records_by_type: Dict[str, List[HealthRecordResponse]] = defaultdict(list)
         for record in records:
             records_by_type[record.record_type].append(record)
-        
-        # Determine which metrics should be visible by default
-        visible_metrics = self._get_default_visible_metrics(list(records_by_type.keys()))
-        
-        # Create figure
+
+        available_metrics = list(records_by_type.keys())
+        visible_metrics = self._get_default_visible_metrics(available_metrics)
+
         fig = go.Figure()
-        
-        # Track which reference bands we've added (avoid duplicates)
-        added_reference_bands: set = set()
-        
-        # Collect all values to determine Y-axis range for reference bands
-        all_values: List[float] = []
-        date_range: Tuple[datetime, datetime] = self._get_date_range(records)
-        
-        # First pass: collect all values and add traces
+        date_range = self._get_date_range(records)
+
+        # Add all traces
         for record_type, type_records in records_by_type.items():
             trace_data = self._prepare_trace_data(record_type, type_records)
-            all_values.extend(trace_data['values'])
-            
-            # Determine visibility
-            is_visible = self._should_be_visible(record_type, visible_metrics)
-            
-            # Add trace with semantic styling
-            fig.add_trace(self._create_trace(
-                record_type=record_type,
-                trace_data=trace_data,
-                is_visible=is_visible
-            ))
-        
-        # Second pass: add reference range bands for visible metrics
-        for metric in visible_metrics:
-            if metric in records_by_type and metric not in added_reference_bands:
-                self._add_reference_band(fig, metric, date_range, all_values)
-                added_reference_bands.add(metric)
-        
-        # Update layout with mobile-friendly configuration
-        self._apply_layout(fig, patient_name, date_range)
-        
-        # Add summary statistics panel
-        self._add_summary_panel(fig, records_by_type, date_range)
-        
-        # Generate HTML with mobile-optimized config
+            is_visible = record_type in visible_metrics
+            fig.add_trace(self._create_trace(record_type, trace_data, is_visible))
+
+        # Add reference bands for ALL metrics with ranges
+        for record_type in records_by_type:
+            if record_type.lower() in NORMAL_RANGES:
+                self._add_reference_band(fig, record_type, date_range)
+
+        # Layout and extras
+        self._apply_layout(fig, patient_name)
+        self._add_summary_panel(fig, records_by_type, date_range[1])
+
+        # Disclaimer
+        fig.add_annotation(
+            text="ℹ️ Shaded bands show typical adult reference ranges (general information only — not medical advice)",
+            xref="paper", yref="paper",
+            x=0.5, y=-0.32,
+            showarrow=False,
+            font=dict(size=9, color="#757575"),
+            xanchor="center", align="center"
+        )
+
         html_content = pio.to_html(
-            fig, 
+            fig,
             include_plotlyjs='cdn',
             config=self._get_mobile_config(),
             div_id="health-graph"
         )
-        
-        # Add mobile-responsive CSS
-        html_content = self._inject_mobile_css(html_content)
-        
-        return html_content
-    
+
+        return self._inject_mobile_css(html_content)
+
+    # --------------------------------------------------------------------- #
+    # Supporting methods
+    # --------------------------------------------------------------------- #
+
     def _generate_empty_graph(self, patient_name: str) -> str:
-        """Generate placeholder graph when no records exist."""
         fig = go.Figure()
         fig.update_layout(
-            title=dict(
-                text=f"<b>Health Records</b><br><sup>{patient_name}</sup>",
-                font=dict(size=20, color='#212121'),
-                x=0.5,
-                xanchor='center',
-            ),
-            xaxis=dict(
-                showgrid=False,
-                showticklabels=False,
-                zeroline=False,
-            ),
-            yaxis=dict(
-                showgrid=False,
-                showticklabels=False,
-                zeroline=False,
-            ),
+            title=dict(text=f"<b>Health Records</b><br><sup>{patient_name}</sup>", font=dict(size=20), x=0.5, xanchor='center'),
+            xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+            yaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
             height=450,
-            autosize=True,
-            margin=dict(l=50, r=50, t=80, b=50),
             template="plotly_white",
             paper_bgcolor='#FAFAFA',
             plot_bgcolor='#FFFFFF',
             annotations=[
-                {
-                    'text': '📊',
-                    'xref': 'paper',
-                    'yref': 'paper',
-                    'x': 0.5,
-                    'y': 0.6,
-                    'showarrow': False,
-                    'font': {'size': 48}
-                },
-                {
-                    'text': '<b>No health records yet</b>',
-                    'xref': 'paper',
-                    'yref': 'paper',
-                    'x': 0.5,
-                    'y': 0.42,
-                    'showarrow': False,
-                    'font': {'size': 18, 'color': '#424242'}
-                },
-                {
-                    'text': 'Upload a lab report to see your health trends',
-                    'xref': 'paper',
-                    'yref': 'paper',
-                    'x': 0.5,
-                    'y': 0.32,
-                    'showarrow': False,
-                    'font': {'size': 14, 'color': '#757575'}
-                }
+                dict(text='📊', xref='paper', yref='paper', x=0.5, y=0.6, showarrow=False, font=dict(size=48)),
+                dict(text='<b>No health records yet</b>', xref='paper', yref='paper', x=0.5, y=0.42, showarrow=False, font=dict(size=18, color='#424242')),
+                dict(text='Upload a lab report to see trends', xref='paper', yref='paper', x=0.5, y=0.32, showarrow=False, font=dict(size=14, color='#757575')),
             ]
         )
-        
-        html_content = pio.to_html(
-            fig, 
-            include_plotlyjs='cdn',
-            config=self._get_mobile_config()
-        )
-        return self._inject_mobile_css(html_content)
-    
+        html = pio.to_html(fig, include_plotlyjs='cdn', config=self._get_mobile_config())
+        return self._inject_mobile_css(html)
+
     def _get_default_visible_metrics(self, available_metrics: List[str]) -> List[str]:
-        """
-        Determine which metrics should be visible by default.
-        
-        Prioritizes clinically important metrics that exist in the data.
-        Shows up to 3 metrics to avoid cluttering the initial view.
-        """
+        normalized = {m.lower(): m for m in available_metrics}
         visible = []
-        normalized_available = {m.lower(): m for m in available_metrics}
-        
-        # First, check for priority metrics
-        for priority_metric in DEFAULT_VISIBLE_METRICS:
-            if priority_metric in normalized_available:
-                visible.append(normalized_available[priority_metric])
+        for priority in DEFAULT_VISIBLE_METRICS:
+            if priority in normalized:
+                visible.append(normalized[priority])
                 if len(visible) >= 3:
                     break
-        
-        # If we have fewer than 2 visible, add more from available
-        if len(visible) < 2:
-            for metric in available_metrics:
-                if metric not in visible:
-                    visible.append(metric)
+        if len(visible) < 2 and available_metrics:
+            for m in available_metrics:
+                if m not in visible:
+                    visible.append(m)
                     if len(visible) >= 2:
                         break
-        
         return visible
-    
-    def _should_be_visible(self, record_type: str, visible_metrics: List[str]) -> bool:
-        """Check if a record type should be visible by default."""
-        return record_type in visible_metrics
-    
+
     def _get_date_range(self, records: List[HealthRecordResponse]) -> Tuple[datetime, datetime]:
-        """Get the min and max dates from records."""
         dates = []
-        for record in records:
+        for r in records:
             try:
-                dt = datetime.fromisoformat(record.timestamp)
+                dt = datetime.fromisoformat(r.timestamp)
                 dates.append(dt)
             except (ValueError, AttributeError):
                 continue
-        
         if not dates:
             now = datetime.now()
-            return (now, now)
-        
-        return (min(dates), max(dates))
-    
-    def _prepare_trace_data(
-        self, 
-        record_type: str, 
-        type_records: List[HealthRecordResponse]
-    ) -> Dict[str, Any]:
-        """
-        Prepare data for a single trace.
-        
-        Returns dict with timestamps, values, units, formatted dates,
-        percent changes, and abnormal status for each value.
-        """
-        # Parse and sort by datetime
+            return now, now
+        return min(dates), max(dates)
+
+    def _prepare_trace_data(self, record_type: str, type_records: List[HealthRecordResponse]) -> Dict[str, Any]:
         records_with_dt = []
         for r in type_records:
             try:
@@ -459,366 +284,174 @@ class GraphService:
                 records_with_dt.append((dt, r))
             except (ValueError, AttributeError):
                 continue
-        
+
         sorted_records = sorted(records_with_dt, key=lambda x: x[0])
-        
-        timestamps = []
-        values = []
-        units = []
-        formatted_dates = []
-        
-        for dt, record in sorted_records:
-            timestamps.append(dt)
-            values.append(self._parse_value(record.value))
-            units.append(record.unit or self._get_default_unit(record_type))
-            formatted_dates.append(dt.strftime('%b %d, %Y'))
-        
-        # Get consistent unit for this metric
-        unique_units = list(set([u for u in units if u]))
-        unit = unique_units[0] if unique_units else self._get_default_unit(record_type)
-        
-        # Calculate percent change from previous value
-        percent_changes = self._calculate_percent_changes(values)
-        
-        # Determine which values are abnormal (outside normal range)
+
+        timestamps = [dt for dt, _ in sorted_records]
+        values = [self._parse_value(r.value) for _, r in sorted_records]
+        unit = (type_records[0].unit or self._get_default_unit(record_type)) if type_records else ''
+
         is_abnormal = self._check_abnormal_values(record_type, values)
-        
+
         return {
             'timestamps': timestamps,
             'values': values,
             'unit': unit,
-            'formatted_dates': formatted_dates,
-            'percent_changes': percent_changes,
             'is_abnormal': is_abnormal,
         }
-    
-    def _calculate_percent_changes(self, values: List[float]) -> List[str]:
-        """
-        Calculate percent change from previous value for each data point.
-        
-        Returns list of formatted strings like "+5.2%", "-3.1%", or "" for first value.
-        """
-        changes = []
-        for i, val in enumerate(values):
-            if i == 0:
-                changes.append("")  # No previous value
-            else:
-                prev = values[i - 1]
-                if prev != 0:
-                    pct = ((val - prev) / prev) * 100
-                    if pct > 0:
-                        changes.append(f"+{pct:.1f}%")
-                    else:
-                        changes.append(f"{pct:.1f}%")
-                else:
-                    changes.append("")
-        return changes
-    
+
+    def _parse_value(self, value_str: str) -> float:
+        try:
+            return float(value_str)
+        except ValueError:
+            if '/' in value_str:
+                return float(value_str.split('/')[0].strip())
+            match = re.search(r'(\d+\.?\d*)', value_str)
+            if match:
+                return float(match.group(1))
+            logger.warning(f"Could not parse value '{value_str}'")
+            return 0.0
+
     def _check_abnormal_values(self, record_type: str, values: List[float]) -> List[bool]:
-        """
-        Check which values are outside the normal reference range.
-        
-        Returns list of booleans - True if abnormal, False if normal or unknown.
-        """
-        normalized = record_type.lower()
-        
-        if normalized not in NORMAL_RANGES:
+        norm = record_type.lower()
+        if norm not in NORMAL_RANGES:
             return [False] * len(values)
-        
-        min_normal, max_normal, _ = NORMAL_RANGES[normalized]
-        
-        return [
-            not (min_normal <= val <= max_normal)
-            for val in values
-        ]
-    
+        low, high, _ = NORMAL_RANGES[norm]
+        return [not (low <= v <= high) for v in values]
+
     def _get_default_unit(self, record_type: str) -> str:
-        """Get default unit for a metric type."""
         return DEFAULT_UNITS.get(record_type.lower(), '')
-    
+
     def _get_metric_color(self, record_type: str) -> str:
-        """Get semantic color for a metric type."""
-        normalized = record_type.lower()
-        
-        # Direct lookup
-        if normalized in METRIC_COLORS:
-            return METRIC_COLORS[normalized]
-        
-        # Partial match for variations
+        norm = record_type.lower()
+        if norm in METRIC_COLORS:
+            return METRIC_COLORS[norm]
         for key, color in METRIC_COLORS.items():
-            if key in normalized or normalized in key:
+            if key in norm or norm in key:
                 return color
-        
-        # Default to a distinguishable gray
-        return '#546E7A'  # Blue-gray
-    
+        return '#546E7A'
+
     def _get_category(self, record_type: str) -> str:
-        """Determine the clinical category for a metric."""
-        normalized = record_type.lower()
-        
-        kidney_keywords = ['creatinine', 'urea', 'bun', 'egfr']
-        sugar_keywords = ['sugar', 'glucose', 'hba1c', 'blood sugar']
-        electrolyte_keywords = ['sodium', 'potassium', 'chloride', 'calcium', 'phosphorus', 'magnesium']
-        blood_keywords = ['haemoglobin', 'hemoglobin', 'hematocrit', 'rbc', 'wbc', 'platelets']
-        liver_keywords = ['bilirubin', 'sgpt', 'alt', 'sgot', 'ast', 'alkaline phosphatase', 'ggt']
-        lipid_keywords = ['cholesterol', 'triglycerides', 'hdl', 'ldl', 'vldl']
-        
-        if any(kw in normalized for kw in kidney_keywords):
-            return 'kidney'
-        elif any(kw in normalized for kw in sugar_keywords):
-            return 'sugar'
-        elif any(kw in normalized for kw in electrolyte_keywords):
-            return 'electrolyte'
-        elif any(kw in normalized for kw in blood_keywords):
-            return 'blood'
-        elif any(kw in normalized for kw in liver_keywords):
-            return 'liver'
-        elif any(kw in normalized for kw in lipid_keywords):
-            return 'lipid'
-        else:
-            return 'other'
-    
+        norm = record_type.lower()
+        keyword_maps = {
+            'kidney': ['creatinine', 'urea', 'bun', 'egfr'],
+            'sugar': ['sugar', 'glucose', 'hba1c'],
+            'electrolyte': ['sodium', 'potassium', 'chloride', 'calcium', 'phosphorus', 'magnesium'],
+            'blood': ['haemoglobin', 'hemoglobin', 'hematocrit', 'rbc', 'wbc', 'platelets'],
+            'liver': ['bilirubin', 'sgpt', 'alt', 'sgot', 'ast', 'alkaline phosphatase'],
+            'lipid': ['cholesterol', 'triglycerides', 'hdl', 'ldl'],
+        }
+        for cat, keywords in keyword_maps.items():
+            if any(k in norm for k in keywords):
+                return cat
+        return 'other'
+
     def _get_trend_indicator(self, values: List[float]) -> str:
-        """
-        Get trend arrow based on last two values.
-        
-        Returns: ↑ (rising), ↓ (falling), → (stable), or "" (single point)
-        """
         if len(values) < 2:
             return ""
-        
-        last = values[-1]
-        prev = values[-2]
-        
-        if prev == 0:
-            return ""
-        
-        pct_change = ((last - prev) / prev) * 100
-        
-        if pct_change > 5:  # >5% increase
+        pct = ((values[-1] - values[-2]) / values[-2]) * 100 if values[-2] != 0 else 0
+        if pct > 5:
             return " ↑"
-        elif pct_change < -5:  # >5% decrease
+        elif pct < -5:
             return " ↓"
-        else:
-            return " →"  # Stable (within ±5%)
-    
+        return " →"
+
     def _get_metric_description(self, record_type: str) -> str:
-        """Get educational description for a metric type."""
-        normalized = record_type.lower()
-        
-        # Direct lookup
-        if normalized in METRIC_DESCRIPTIONS:
-            return METRIC_DESCRIPTIONS[normalized]
-        
-        # Partial match for variations
+        norm = record_type.lower()
+        if norm in METRIC_DESCRIPTIONS:
+            return METRIC_DESCRIPTIONS[norm]
         for key, desc in METRIC_DESCRIPTIONS.items():
-            if key in normalized or normalized in key:
+            if key in norm or norm in key:
                 return desc
-        
-        return ""  # No description available
-    
-    def _create_trace(
-        self, 
-        record_type: str, 
-        trace_data: Dict[str, Any],
-        is_visible: bool
-    ) -> go.Scatter:
-        """Create a Plotly trace with semantic styling, abnormal highlighting, and value labels."""
+        return ""
+
+    def _create_trace(self, record_type: str, trace_data: Dict[str, Any], is_visible: bool) -> go.Scatter:
         base_color = self._get_metric_color(record_type)
         unit = trace_data['unit']
         values = trace_data['values']
-        is_abnormal = trace_data.get('is_abnormal', [False] * len(values))
-        percent_changes = trace_data.get('percent_changes', [''] * len(values))
-        
-        # Get category for legend grouping
-        category = self._get_category(record_type)
-        category_info = CATEGORY_DISPLAY.get(category, CATEGORY_DISPLAY['other'])
-        
-        # Get educational description for tooltip
+        is_abnormal = trace_data['is_abnormal']
         description = self._get_metric_description(record_type)
-        
-        # Get trend arrow for legend name
-        trend_arrow = self._get_trend_indicator(values)
-        
-        # Create trace name with unit and trend arrow
+        trend = self._get_trend_indicator(values)
+
+        name = f"{record_type}{trend}"
         if unit:
-            trace_name = f"{record_type}{trend_arrow} ({unit})"
-        else:
-            trace_name = f"{record_type}{trend_arrow}"
-        
-        # Create per-point marker colors (red border for abnormal values)
-        marker_colors = []
-        marker_line_colors = []
-        marker_symbols = []
-        
-        for abnormal in is_abnormal:
-            if abnormal:
-                marker_colors.append('#FFEBEE')  # Light red fill for abnormal
-                marker_line_colors.append('#E53935')  # Red border for abnormal
-                marker_symbols.append('circle')
-            else:
-                marker_colors.append(base_color)
-                marker_line_colors.append('white')
-                marker_symbols.append('circle')
-        
-        # Build custom data for hover (combine date and percent change)
-        custom_data = []
-        for i, (date, pct) in enumerate(zip(trace_data['formatted_dates'], percent_changes)):
-            if pct:
-                custom_data.append(f"{date}<br>Change: {pct}")
-            else:
-                custom_data.append(date)
-        
-        # Create text labels for data points (show values on chart)
-        # Format based on value magnitude for readability
+            name += f" ({unit})"
+
+        # Red bold border only on abnormal points
+        line_widths = [4 if a else 2 for a in is_abnormal]
+        line_colors = ['#E53935' if a else 'white' for a in is_abnormal]
+
+        # Text labels for data points (value displayed on chart)
         text_labels = []
         for val in values:
             if val >= 100:
-                text_labels.append(f"{val:.0f}")  # No decimals for large values
+                text_labels.append(f"{val:.0f}")
             elif val >= 10:
-                text_labels.append(f"{val:.1f}")  # 1 decimal for medium values
+                text_labels.append(f"{val:.1f}")
             else:
-                text_labels.append(f"{val:.2f}")  # 2 decimals for small values
-        
-        # Build custom hover template with educational description
-        description_line = f"<i>{description}</i><br>" if description else ""
+                text_labels.append(f"{val:.2f}")
+
+        desc_line = f"<i>{description}</i><br>" if description else ""
         hovertemplate = (
             f"<b>{record_type}</b><br>"
-            f"{description_line}"
-            "%{customdata}<br>"  # Formatted date + percent change
+            f"{desc_line}"
+            "%{x|%b %d, %Y}<br>"
             f"Value: %{{y:.2f}} {unit}"
             "<extra></extra>"
         )
-        
+
         return go.Scatter(
             x=trace_data['timestamps'],
             y=values,
             mode='lines+markers+text',  # Added text mode for value labels
-            name=trace_name,
+            name=name,
             visible=True if is_visible else "legendonly",
-            showlegend=True,
-            # Legend grouping by clinical category
-            legendgroup=category,
-            legendgrouptitle=dict(
-                text=category_info['title'],
-                font=dict(size=12, color='#424242'),
-            ),
-            line=dict(
-                width=3.5,           # Thicker for mobile visibility
-                shape='linear',
-                color=base_color,
-            ),
+            line=dict(width=3.5, color=base_color),
             marker=dict(
-                size=12,             # Larger markers for touch
-                color=marker_colors,
-                line=dict(
-                    width=2.5,
-                    color=marker_line_colors
-                ),
-                symbol=marker_symbols,
+                size=12,
+                color=base_color,
+                line=dict(width=line_widths, color=line_colors)
             ),
             text=text_labels,
             textposition='top center',
-            textfont=dict(
-                size=10,
-                color='#616161',
-            ),
+            textfont=dict(size=10, color='#616161'),
             connectgaps=True,
-            customdata=custom_data,
             hovertemplate=hovertemplate,
         )
-    
-    def _add_reference_band(
-        self, 
-        fig: go.Figure, 
-        metric: str, 
-        date_range: Tuple[datetime, datetime],
-        all_values: List[float]
-    ) -> None:
-        """
-        Add a subtle reference range band for a metric.
-        
-        These bands are purely informational and show general adult reference ranges.
-        """
-        normalized = metric.lower()
-        
-        if normalized not in NORMAL_RANGES:
+
+    def _add_reference_band(self, fig: go.Figure, metric: str, date_range: Tuple[datetime, datetime]) -> None:
+        norm = metric.lower()
+        if norm not in NORMAL_RANGES:
             return
-        
-        min_normal, max_normal, _ = NORMAL_RANGES[normalized]
-        category = self._get_category(metric)
-        fill_color = RANGE_BAND_COLORS.get(category, RANGE_BAND_COLORS['other'])
-        
-        # Extend date range slightly for visual padding
-        from datetime import timedelta
+        low, high, _ = NORMAL_RANGES[norm]
+        cat = self._get_category(metric)
+        color = RANGE_BAND_COLORS.get(cat, RANGE_BAND_COLORS['other'])
+
         x0 = date_range[0] - timedelta(days=7)
         x1 = date_range[1] + timedelta(days=7)
-        
-        # Add shaded rectangle for normal range
+
         fig.add_shape(
             type="rect",
-            x0=x0,
-            x1=x1,
-            y0=min_normal,
-            y1=max_normal,
-            fillcolor=fill_color,
+            x0=x0, x1=x1,
+            y0=low, y1=high,
+            fillcolor=color,
             line=dict(width=0),
             layer="below",
-            name=f"{metric} normal range",
         )
-        
-        # Add subtle annotation for the range (positioned at the edge)
-        # Only add if the range is meaningful relative to the data
-        if all_values:
-            data_min = min(all_values)
-            data_max = max(all_values)
-            # Only annotate if the range is visible in the current view
-            if data_min <= max_normal * 1.5 and data_max >= min_normal * 0.5:
-                fig.add_annotation(
-                    x=x1,
-                    y=(min_normal + max_normal) / 2,
-                    text=f"Normal: {min_normal}-{max_normal}",
-                    showarrow=False,
-                    font=dict(size=10, color='rgba(0,0,0,0.4)'),
-                    xanchor='left',
-                    xshift=5,
-                )
-    
-    def _apply_layout(
-        self, 
-        fig: go.Figure, 
-        patient_name: str,
-        date_range: Tuple[datetime, datetime]
-    ) -> None:
-        """Apply mobile-optimized layout configuration."""
+
+    def _apply_layout(self, fig: go.Figure, patient_name: str) -> None:
         fig.update_layout(
-            # Title
             title=dict(
-                text=f"<b>Health Records</b><br><sup>{patient_name}</sup>",
-                font=dict(size=20, color='#212121'),
-                x=0.5,
-                xanchor='center',
-                y=0.95,
+                text=f"<b>Health Trends</b><br><sup>{patient_name}</sup>",
+                font=dict(size=20),
+                x=0.5, xanchor="center"
             ),
-            
-            # X-axis (dates) with range selector buttons
             xaxis=dict(
-                title=dict(
-                    text="Date",
-                    font=dict(size=14, color='#424242'),
-                    standoff=10,
-                ),
+                title="Date",
                 type="date",
                 showgrid=True,
-                gridwidth=1,
                 gridcolor='rgba(0,0,0,0.08)',
-                tickfont=dict(size=12, color='#616161'),
-                tickformat='%b %d',  # "Nov 19" format
-                dtick='M1',  # Monthly ticks
-                showline=True,
-                linewidth=1,
-                linecolor='rgba(0,0,0,0.2)',
-                # Date range filter buttons
+                tickformat='%b %d',
                 rangeselector=dict(
                     buttons=[
                         dict(count=1, label="1M", step="month", stepmode="backward"),
@@ -827,320 +460,129 @@ class GraphService:
                         dict(count=1, label="1Y", step="year", stepmode="backward"),
                         dict(step="all", label="All"),
                     ],
-                    font=dict(size=11, color='#424242'),
                     bgcolor='rgba(255,255,255,0.95)',
-                    activecolor='#E3F2FD',  # Light blue when active
-                    bordercolor='rgba(0,0,0,0.15)',
-                    borderwidth=1,
-                    x=0,
-                    xanchor='left',
-                    y=1.0,
-                    yanchor='bottom',
+                    activecolor='#E3F2FD',
                 ),
-                # Add range slider for additional navigation
-                rangeslider=dict(
-                    visible=True,
-                    thickness=0.05,  # Thin slider
-                    bgcolor='#FAFAFA',
-                    bordercolor='rgba(0,0,0,0.1)',
-                    borderwidth=1,
-                ),
+                rangeslider=dict(visible=True, thickness=0.05),
             ),
-            
-            # Y-axis (values)
             yaxis=dict(
-                title=dict(
-                    text="Value",
-                    font=dict(size=14, color='#424242'),
-                    standoff=10,
-                ),
+                title="Value",
                 showgrid=True,
-                gridwidth=1,
                 gridcolor='rgba(0,0,0,0.08)',
-                tickfont=dict(size=12, color='#616161'),
-                showline=True,
-                linewidth=1,
-                linecolor='rgba(0,0,0,0.2)',
-                zeroline=False,
             ),
-            
-            # Hover mode
             hovermode='x unified',
-            
-            # Legend - optimized for mobile touch with grouped categories
-            showlegend=True,
+            # Legend: horizontal at bottom (better for mobile), wraps naturally
             legend=dict(
                 orientation="h",
-                yanchor="top",
-                y=-0.12,
-                xanchor="center",
-                x=0.5,
-                font=dict(size=12, color='#424242'),
-                itemclick="toggle",
-                itemdoubleclick="toggleothers",
-                groupclick="toggleitem",  # Click toggles individual items, not whole group
+                x=0.5, xanchor="center",
+                y=-0.15, yanchor="top",
+                font=dict(size=11),
                 bgcolor="rgba(255,255,255,0.95)",
                 bordercolor="rgba(0,0,0,0.15)",
                 borderwidth=1,
-                itemsizing='constant',
-                tracegroupgap=12,  # More space between groups
+                itemclick="toggle",
+                itemdoubleclick="toggleothers",
             ),
-            
-            # Sizing - taller for mobile scrolling + range controls
-            height=800,
-            autosize=True,
-            margin=dict(
-                l=55,
-                r=60,   # Slightly more space for summary panel
-                t=130,  # Extra space for range selector buttons
-                b=180,  # Extra space for grouped legend + helper text
-            ),
-            
-            # Template and colors
+            height=720,
+            margin=dict(l=60, r=40, t=100, b=180),  # More bottom space for legend
             template="plotly_white",
             paper_bgcolor='#FAFAFA',
             plot_bgcolor='#FFFFFF',
-            
-            # Interaction
             dragmode='pan',
-            
-            # Hover styling
-            hoverlabel=dict(
-                bgcolor="white",
-                bordercolor="rgba(0,0,0,0.2)",
-                font=dict(size=13, color='#212121'),
-                namelength=-1,  # Show full name
-            ),
+            hoverlabel=dict(bgcolor="white", font_size=13),
         )
-        
-        # Add legend helper text
+
         fig.add_annotation(
-            text="<i>Use 1M/3M/6M/1Y/All to filter dates • Tap legend items to show/hide • Red borders = outside normal</i>",
-            xref="paper",
-            yref="paper",
-            x=0.5,
-            y=-0.22,
+            text="<i>Tap legend to show/hide • Red borders = outside typical range</i>",
+            xref="paper", yref="paper",
+            x=0.5, y=-0.25,
             showarrow=False,
             font=dict(size=10, color='#9E9E9E'),
-            xanchor='center',
+            xanchor='center'
         )
-    
-    def _add_summary_panel(
-        self, 
-        fig: go.Figure, 
-        records_by_type: Dict[str, List[HealthRecordResponse]],
-        date_range: Tuple[datetime, datetime]
-    ) -> None:
-        """
-        Add a summary statistics panel showing latest values for key metrics.
-        
-        Displays latest readings with status indicators (✓ normal, ⚠️ abnormal).
-        """
-        # Get the latest date from the records
-        latest_date = date_range[1]
-        formatted_date = latest_date.strftime('%b %d, %Y')
-        
-        # Build summary lines for key metrics (prioritize clinically important ones)
-        summary_items = []
-        
-        # Sort metrics by clinical priority
-        priority_order = ['creatinine', 'serum creatinine', 'blood urea', 'random blood sugar', 
-                         'haemoglobin', 'hemoglobin', 'sodium', 'potassium']
-        
+
+    def _add_summary_panel(self, fig: go.Figure, records_by_type: Dict[str, List[HealthRecordResponse]], latest_date: datetime) -> None:
+        priority = ['creatinine', 'serum creatinine', 'blood urea', 'random blood sugar', 'haemoglobin', 'hemoglobin', 'sodium', 'potassium']
         sorted_metrics = []
-        for priority in priority_order:
-            for metric in records_by_type.keys():
-                if metric.lower() == priority and metric not in sorted_metrics:
-                    sorted_metrics.append(metric)
-        
-        # Add remaining metrics not in priority list
-        for metric in records_by_type.keys():
-            if metric not in sorted_metrics:
-                sorted_metrics.append(metric)
-        
-        # Limit to 5 metrics to keep summary concise
+        for p in priority:
+            for m in records_by_type:
+                if m.lower() == p and m not in sorted_metrics:
+                    sorted_metrics.append(m)
+        for m in records_by_type:
+            if m not in sorted_metrics:
+                sorted_metrics.append(m)
+
+        items = []
         for metric in sorted_metrics[:5]:
-            type_records = records_by_type[metric]
-            
-            # Get latest record for this metric
-            latest_record = None
-            latest_dt = None
-            
-            for record in type_records:
-                try:
-                    dt = datetime.fromisoformat(record.timestamp)
-                    if latest_dt is None or dt > latest_dt:
-                        latest_dt = dt
-                        latest_record = record
-                except (ValueError, AttributeError):
-                    continue
-            
-            if latest_record:
-                value = self._parse_value(latest_record.value)
-                unit = latest_record.unit or self._get_default_unit(metric)
-                
-                # Check if abnormal
-                normalized = metric.lower()
-                status_icon = "✓"  # Default: normal or unknown
-                
-                if normalized in NORMAL_RANGES:
-                    min_normal, max_normal, _ = NORMAL_RANGES[normalized]
-                    if not (min_normal <= value <= max_normal):
-                        status_icon = "⚠️"
-                
-                # Format value based on magnitude
-                if value >= 100:
-                    val_str = f"{value:.0f}"
-                elif value >= 10:
-                    val_str = f"{value:.1f}"
-                else:
-                    val_str = f"{value:.2f}"
-                
-                summary_items.append(f"{status_icon} {metric}: {val_str} {unit}")
-        
-        if not summary_items:
+            latest_record = max(records_by_type[metric], key=lambda r: datetime.fromisoformat(r.timestamp))
+            value = self._parse_value(latest_record.value)
+            unit = latest_record.unit or self._get_default_unit(metric)
+            norm_key = metric.lower()
+            icon = "✓" if norm_key not in NORMAL_RANGES else ("✓" if NORMAL_RANGES[norm_key][0] <= value <= NORMAL_RANGES[norm_key][1] else "⚠️")
+            val_str = f"{value:.0f}" if value >= 100 else f"{value:.1f}" if value >= 10 else f"{value:.2f}"
+            items.append(f"{icon} {metric}: {val_str} {unit}")
+
+        if not items:
             return
-        
-        # Build summary text
-        summary_header = f"<b>Latest Readings</b> ({formatted_date})"
-        summary_body = "<br>".join(summary_items)
-        summary_text = f"{summary_header}<br>{summary_body}"
-        
-        # Add summary as annotation at top-right of the chart
+
+        summary_text = f"<b>Latest ({latest_date.strftime('%b %d, %Y')})</b><br>" + "<br>".join(items)
         fig.add_annotation(
             text=summary_text,
-            xref="paper",
-            yref="paper",
-            x=1.0,
-            y=1.0,
-            xanchor='right',
-            yanchor='top',
+            xref="paper", yref="paper",
+            x=1.0, y=1.0,
+            xanchor='right', yanchor='top',
             showarrow=False,
-            font=dict(size=11, color='#424242'),
+            font=dict(size=11),
             align='left',
             bgcolor='rgba(255,255,255,0.95)',
             bordercolor='rgba(0,0,0,0.1)',
             borderwidth=1,
             borderpad=8,
         )
-    
+
     def _get_mobile_config(self) -> Dict[str, Any]:
-        """
-        Get Plotly configuration optimized for mobile/touch devices.
-        """
         return {
             'displayModeBar': True,
             'displaylogo': False,
-            'modeBarButtonsToRemove': [
-                'lasso2d', 
-                'select2d',
-                'autoScale2d',
-            ],
+            'modeBarButtonsToRemove': ['lasso2d', 'select2d', 'autoScale2d'],
             'responsive': True,
-            'toImageButtonOptions': {
-                'format': 'png',
-                'filename': 'health_records',
-                'height': 800,
-                'width': 1200,
-                'scale': 2,  # Higher resolution for sharing
-            },
             'scrollZoom': True,
             'doubleClick': 'reset',
-            'showTips': True,
+            'toImageButtonOptions': {'format': 'png', 'filename': 'health_records', 'height': 800, 'width': 1200, 'scale': 2},
         }
-    
+
     def _inject_mobile_css(self, html_content: str) -> str:
-        """Inject mobile-responsive CSS into the HTML."""
         mobile_css = """
         <style>
-            * {
-                box-sizing: border-box;
+            * { box-sizing: border-box; }
+            body { 
+                margin: 0; 
+                padding: 8px; 
+                background: #FAFAFA; 
+                font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
             }
-            body {
-                margin: 0;
-                padding: 8px;
-                background-color: #FAFAFA;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            #health-graph { 
+                width: 100% !important; 
+                max-width: 100%; 
+                border-radius: 12px; 
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08); 
+                background: white; 
             }
-            #health-graph {
-                width: 100% !important;
-                max-width: 100%;
-                border-radius: 12px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-                background: white;
+            .js-plotly-plot { width: 100% !important; }
+            /* Legend touch targets */
+            .legend .traces { cursor: pointer; }
+            /* Tablet */
+            @media (max-width: 768px) { 
+                body { padding: 4px; } 
+                #health-graph { border-radius: 8px; } 
+                .modebar { display: none !important; } 
             }
-            .js-plotly-plot {
-                width: 100% !important;
-                max-width: 100%;
-            }
-            /* Improve legend touch targets */
-            .legend .traces .legendtoggle {
-                min-height: 44px !important;
-            }
-            /* Mobile-specific adjustments */
-            @media (max-width: 768px) {
-                body {
-                    padding: 4px;
-                }
-                #health-graph {
-                    border-radius: 8px;
-                }
-                /* Hide mode bar on very small screens for cleaner look */
-                .plotly .modebar {
-                    display: none !important;
-                }
-            }
-            @media (max-width: 480px) {
-                body {
-                    padding: 2px;
-                }
-            }
-            /* Ensure proper touch handling */
-            @media (pointer: coarse) {
-                .legend .traces {
-                    cursor: pointer;
-                }
+            /* Mobile */
+            @media (max-width: 480px) { 
+                body { padding: 2px; }
+                /* Make legend items more compact on small screens */
+                .legend .legendtext { font-size: 10px !important; }
             }
         </style>
         """
         return html_content.replace('<body>', f'<body>{mobile_css}')
-    
-    def _parse_value(self, value_str: str) -> float:
-        """
-        Parse a value string to float.
-        
-        Handles various formats:
-        - Simple numbers: "120" -> 120.0
-        - Decimals: "120.5" -> 120.5
-        - Blood pressure: "120/80" -> 120.0 (systolic)
-        - Other formats: attempts to extract first number
-        
-        Args:
-            value_str: String representation of the value
-        
-        Returns:
-            float: Parsed numeric value
-        """
-        try:
-            return float(value_str)
-        except ValueError:
-            # Handle blood pressure format (e.g., "120/80")
-            if '/' in value_str:
-                parts = value_str.split('/')
-                if parts:
-                    try:
-                        return float(parts[0].strip())
-                    except ValueError:
-                        pass
-            
-            # Try to extract first number from string
-            match = re.search(r'(\d+\.?\d*)', value_str)
-            if match:
-                try:
-                    return float(match.group(1))
-                except ValueError:
-                    pass
-            
-            logger.warning(f"Could not parse value '{value_str}', using 0.0")
-            return 0.0
-
