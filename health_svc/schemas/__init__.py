@@ -13,6 +13,7 @@ from schemas.medical_info import (
     TestResult,
     HospitalInfo,
     PatientInfo,
+    LabReport,
     MedicalInfo,
 )
 
@@ -29,6 +30,7 @@ __all__ = [
     "TestResult",
     "HospitalInfo",
     "PatientInfo",
+    "LabReport",
     "MedicalInfo",
 ]
 

@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 from celery import shared_task
 
 # Import services directly to avoid circular imports
@@ -13,62 +13,15 @@ from services.health_service import HealthService
 from services.gemini_service import GeminiService
 from services.paperless_ngx_service import PaperlessNgxService
 
+# Import schemas from single source of truth
+from schemas.medical_info import TestResult, HospitalInfo, PatientInfo, LabReport
+
 logger = logging.getLogger(__name__)
 
 # Constants
 DEFAULT_RETRY_BASE_DELAY = 2  # seconds
 MAX_RETRIES = 3
 NON_RETRYABLE_ERRORS = (FileNotFoundError, ValueError, ValidationError)
-
-
-# Pydantic models for lab report structure
-class TestResult(BaseModel):
-    """Schema for a single test result in a laboratory report.
-    
-    Represents an individual test measurement with its value, unit, and reference range.
-    The results field is a string to accommodate special characters like arrows (↑, ↓).
-    """
-    test_name: str = Field(..., description="Name of the test", examples=["Blood Urea", "Random Blood Sugar"])
-    results: str = Field(..., description="Test result value (may include special characters like ↑ or ↓)", examples=["64.0", "↑250.0"])
-    unit: str = Field(..., description="Unit of measurement", examples=["mg/dl", "mMol/L"])
-    reference_range: str = Field(..., description="Normal reference range for the test", examples=["10.0-40.0", "136.0-145.0"])
-
-
-class HospitalInfo(BaseModel):
-    """Schema for hospital information in a medical report.
-    
-    Contains identifying information about the hospital and report type.
-    """
-    hospital_name: str = Field(..., description="Name of the hospital", examples=["VR John Doe"])
-    report_type: str = Field(..., description="Type of medical report", examples=["Laboratory Reports"])
-
-
-class PatientInfo(BaseModel):
-    """Schema for patient information in a medical report.
-    
-    Contains demographic and identification information about the patient,
-    including referring doctor details.
-    """
-    patient_name: str = Field(..., description="Full name of the patient", examples=["Mrs Test Patient"])
-    patient_id: Optional[str] = Field(None, description="Patient ID or registration number", examples=["ABB17985"])
-    age_sex: Optional[str] = Field(None, description="Age and sex of the patient", examples=["63Y / FEMALE"])
-    sample_date: str = Field(..., description="Date and time when the sample was collected", examples=["08-11-2025 03:17 PM"])
-    referring_doctor_full_name_titles: Optional[str] = Field(
-        None,
-        description="Full name and qualifications of the referring doctor",
-        examples=["DR. John Doe MBBS, MD GENERAL MEDICINE, DNB CARDIOLOGY"]
-    )
-
-
-class LabReport(BaseModel):
-    """Top-level schema for a complete laboratory report.
-    
-    Represents the full structure of a lab report including hospital information,
-    patient details, and all test results.
-    """
-    hospital_info: HospitalInfo = Field(..., description="Hospital information")
-    patient_info: PatientInfo = Field(..., description="Patient information")
-    results: List[TestResult] = Field(..., description="List of test results")
 
 
 def parse_sample_date(date_str: str) -> datetime:
