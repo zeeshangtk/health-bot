@@ -144,7 +144,7 @@ def test_upload_image_success_jpeg(client, temp_upload_dir):
     mock_task = MagicMock()
     mock_task.delay = MagicMock(return_value=mock_task_result)
     
-    with patch('services.upload_service.process_uploaded_file', mock_task):
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.jpg", image_data, "image/jpeg")}
@@ -176,7 +176,7 @@ def test_upload_image_success_png(client, temp_upload_dir):
     mock_task = MagicMock()
     mock_task.delay = MagicMock(return_value=mock_task_result)
     
-    with patch('services.upload_service.process_uploaded_file', mock_task):
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.png", image_data, "image/png")}
@@ -197,7 +197,7 @@ def test_upload_image_success_gif(client, temp_upload_dir):
     # Mock Celery task
     mock_task = create_mock_celery_task("test-task-id-gif")
     
-    with patch('services.upload_service.process_uploaded_file', mock_task):
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.gif", image_data, "image/gif")}
@@ -218,7 +218,7 @@ def test_upload_image_success_bmp(client, temp_upload_dir):
     # Mock Celery task
     mock_task = create_mock_celery_task("test-task-id-bmp")
     
-    with patch('services.upload_service.process_uploaded_file', mock_task):
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.bmp", image_data, "image/bmp")}
@@ -242,7 +242,7 @@ def test_upload_image_unique_filenames(client, temp_upload_dir):
     # Mock Celery task with multiple returns
     mock_task = create_mock_celery_task_with_side_effect(["task-1", "task-2"])
     
-    with patch('services.upload_service.process_uploaded_file', mock_task):
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         response1 = client.post(
             "/api/v1/records/upload",
             files={"file": ("test1.jpg", image_data1, "image/jpeg")}
@@ -373,7 +373,7 @@ def test_upload_file_at_max_size(client, temp_upload_dir):
     # Mock Celery task
     mock_task = create_mock_celery_task("test-task-id-max")
     
-    with patch('services.upload_service.process_uploaded_file', mock_task):
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("max.jpg", max_size_data, "image/jpeg")}
@@ -407,7 +407,7 @@ def test_upload_jpeg_with_jpeg_extension(client, temp_upload_dir):
     # Mock Celery task
     mock_task = create_mock_celery_task("test-task-id-jpeg-ext")
     
-    with patch('services.upload_service.process_uploaded_file', mock_task):
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.jpeg", image_data, "image/jpeg")}
@@ -428,7 +428,7 @@ def test_upload_integration_full_workflow(client, temp_upload_dir):
     
     # Upload multiple files
     files_uploaded = []
-    with patch('services.upload_service.process_uploaded_file', mock_task):
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         for i, format in enumerate(["jpeg", "png", "gif"]):
             image_data = create_test_image(format, 1024)
             image_data.seek(0)
@@ -464,7 +464,7 @@ def test_upload_response_schema(client, temp_upload_dir):
     # Mock Celery task
     mock_task = create_mock_celery_task("test-task-id-schema")
     
-    with patch('services.upload_service.process_uploaded_file', mock_task):
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.jpg", image_data, "image/jpeg")}
@@ -502,7 +502,7 @@ def test_upload_concurrent_uploads(client, temp_upload_dir):
         return response.status_code == 201
     
     # Upload 5 files concurrently
-    with patch('services.upload_service.process_uploaded_file', mock_task):
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(upload_one) for _ in range(5)]
             results = [f.result() for f in concurrent.futures.as_completed(futures)]
@@ -529,7 +529,7 @@ def test_upload_task_queued_with_correct_parameters(client, temp_upload_dir):
     # Mock Celery task
     mock_task = create_mock_celery_task("test-task-params")
     
-    with patch('services.upload_service.process_uploaded_file', mock_task):
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.jpg", image_data, "image/jpeg")}
@@ -570,7 +570,7 @@ def test_upload_task_queuing_failure_does_not_fail_upload(client, temp_upload_di
     mock_task = MagicMock()
     mock_task.delay = MagicMock(side_effect=Exception("Redis connection failed"))
     
-    with patch('services.upload_service.process_uploaded_file', mock_task):
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.jpg", image_data, "image/jpeg")}
@@ -600,7 +600,7 @@ def test_upload_task_id_in_response_when_queued(client, temp_upload_dir):
     # Mock Celery task
     mock_task = create_mock_celery_task("abc123-task-id")
     
-    with patch('services.upload_service.process_uploaded_file', mock_task):
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.jpg", image_data, "image/jpeg")}

@@ -12,7 +12,6 @@ from fastapi import UploadFile, HTTPException, status
 from typing import Tuple, Optional
 
 from core.config import UPLOAD_DIR, UPLOAD_MAX_SIZE
-from tasks.upload_tasks import process_uploaded_file
 from services.validators.upload_validator import validate_upload_file, validate_file_size
 
 logger = logging.getLogger(__name__)
@@ -92,6 +91,9 @@ class UploadService:
             task_id = None
             if queue_background_task:
                 try:
+                    # Lazy import to avoid circular dependency
+                    from tasks.upload_tasks import process_uploaded_file
+                    
                     upload_timestamp = datetime.now(timezone.utc).isoformat()
                     task = process_uploaded_file.delay(
                         filename=unique_filename,
