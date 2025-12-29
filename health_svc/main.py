@@ -2,17 +2,24 @@
 FastAPI application entry point for Health Service API.
 
 This module configures and creates the FastAPI application with:
+- Structured JSON Logging: Request/response logging for Grafana/Loki
+- Request ID Propagation: UUID-based request tracking across logs
 - Dependency Injection: Services and repositories injected via Depends()
 - Exception Handling: Consistent error responses via setup_exception_handlers()
 - CORS Middleware: Allows cross-origin requests from telegram_bot
 - Lifespan Management: Database initialization and cleanup
+- Metrics Collection: In-memory metrics for Prometheus/Grafana scraping
 
 Architecture Overview:
     ┌─────────────────────────────────────────────────────────────┐
     │                     FastAPI Application                      │
     ├─────────────────────────────────────────────────────────────┤
+    │  Middleware Stack (order matters!)                          │
+    │    ├── LoggingMiddleware  - Request logging & metrics       │
+    │    └── CORSMiddleware     - Cross-origin support            │
+    ├─────────────────────────────────────────────────────────────┤
     │  Routers (api/routers/)                                     │
-    │    ├── health.py     - Health check endpoints               │
+    │    ├── health.py     - /health, /ready, /metrics endpoints  │
     │    ├── patients.py   - Patient CRUD                         │
     │    └── records.py    - Health records & uploads             │
     ├─────────────────────────────────────────────────────────────┤
@@ -28,6 +35,13 @@ Architecture Overview:
     ├─────────────────────────────────────────────────────────────┤
     │  Database (SQLite)              ← Injected into Repositories│
     └─────────────────────────────────────────────────────────────┘
+
+Observability Features:
+    - Structured JSON logs for Grafana Loki
+    - Request ID in logs and X-Request-ID response header
+    - /health endpoint for liveness probes
+    - /ready endpoint for readiness probes (checks DB, Redis)
+    - /metrics endpoint for Prometheus scraping
 
 Dependency Injection Flow:
     1. Request arrives at router endpoint
@@ -48,9 +62,9 @@ import uvicorn
 from core.config import API_HOST, API_PORT, API_RELOAD
 from core.dependencies import get_database
 from core.exceptions import setup_exception_handlers
-from api.routers import health_router, patients_router, records_router
-
-logger = logging.getLogger(__name__)
+from core.logging_config import setup_logging
+from core.middleware import LoggingMiddleware
+from api.routers import health_router, patients_router, records_router, meta_router
 
 
 @asynccontextmanager
@@ -62,6 +76,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     This replaces the deprecated @app.on_event("startup") pattern.
     
     Startup:
+        - Configures structured JSON logging
         - Initializes database connection (triggers schema creation)
         - Logs configuration for debugging
     
@@ -69,15 +84,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         - Logs shutdown message
         - Resources are cleaned up by Python GC
     """
-    # Startup: Initialize database via DI
-    # This ensures the database is ready before any requests
+    # =========================================================================
+    # STARTUP
+    # =========================================================================
+    
+    # Configure structured logging FIRST (before any other logging)
+    # This ensures all startup logs are properly formatted
+    setup_logging(level="INFO", json_format=True)
+    
+    logger = logging.getLogger(__name__)
     logger.info("Starting Health Service API...")
+    
+    # Initialize database via DI
+    # This ensures the database is ready before any requests
     db = get_database()
-    logger.info(f"Database initialized: {db.db_path}")
+    logger.info(
+        "Database initialized",
+        extra={"db_path": db.db_path}
+    )
     
     yield  # Application runs here
     
-    # Shutdown: Cleanup resources if needed
+    # =========================================================================
+    # SHUTDOWN
+    # =========================================================================
     logger.info("Health Service API shutting down...")
 
 
@@ -102,6 +132,10 @@ setup_exception_handlers(app)
 # =============================================================================
 # MIDDLEWARE
 # =============================================================================
+# Order matters! Middleware is executed in REVERSE order of registration.
+# Last registered = first to handle request, last to handle response.
+
+# 1. CORS Middleware (innermost - closest to routes)
 # Configure CORS to allow telegram_bot to call API
 app.add_middleware(
     CORSMiddleware,
@@ -111,6 +145,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 2. Logging Middleware (outermost - captures all requests)
+# Generates request_id, logs requests, collects metrics
+app.add_middleware(LoggingMiddleware)
+
 # =============================================================================
 # ROUTERS
 # =============================================================================
@@ -118,6 +156,7 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(patients_router)
 app.include_router(records_router)
+app.include_router(meta_router)
 
 
 if __name__ == "__main__":

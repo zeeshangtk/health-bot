@@ -47,7 +47,25 @@ class TestAuthentication:
         """Test that the health/root endpoint doesn't require authentication."""
         response = authenticated_client.get("/")
         assert response.status_code == 200
-        assert "Health Service API" in response.json()["message"]
+        # Root endpoint now uses "service" field instead of "message"
+        assert "Health Service API" in response.json()["service"]
+    
+    def test_health_probe_no_auth_required(self, authenticated_client):
+        """Test that the /health liveness probe doesn't require authentication."""
+        response = authenticated_client.get("/health")
+        assert response.status_code == 200
+        assert response.json()["status"] == "healthy"
+    
+    def test_ready_probe_no_auth_required(self, authenticated_client):
+        """Test that the /ready readiness probe doesn't require authentication."""
+        response = authenticated_client.get("/ready")
+        # Should return 200 or 503 depending on dependency health
+        assert response.status_code in (200, 503)
+    
+    def test_metrics_no_auth_required(self, authenticated_client):
+        """Test that the /metrics endpoint doesn't require authentication."""
+        response = authenticated_client.get("/metrics")
+        assert response.status_code == 200
     
     def test_patients_create_requires_auth(self, authenticated_client):
         """Test that creating patients requires authentication."""

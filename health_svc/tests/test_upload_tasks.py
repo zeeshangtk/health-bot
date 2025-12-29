@@ -274,9 +274,10 @@ class TestProcessUploadedFile:
                         content_type,
                         upload_timestamp
                     )
-        
-        # Should log error
-        mock_logger.error.assert_called()
+                
+                # General exceptions log warning (retrying) on first attempt
+                # Only logs error when max retries exhausted
+                mock_logger.warning.assert_called()
     
     def test_process_uploaded_file_invalid_lab_report_structure(
         self, mock_task, temp_file, mock_health_service
@@ -317,8 +318,9 @@ class TestProcessUploadedFile:
                                 content_type,
                                 upload_timestamp
                             )
-        
-        mock_logger.error.assert_called()
+                        
+                        # Assertion must be inside patch context
+                        mock_logger.error.assert_called()
     
     def test_process_uploaded_file_invalid_date_format(
         self, mock_task, temp_file, mock_health_service
@@ -405,8 +407,10 @@ class TestProcessUploadedFile:
                                 content_type,
                                 upload_timestamp
                             )
-        
-        mock_logger.error.assert_called()
+                        
+                        # General exceptions log warning (retrying) on first attempt
+                        # Only logs error when max retries exhausted
+                        mock_logger.warning.assert_called()
     
     def test_process_uploaded_file_retry_on_general_exception(
         self, mock_task, temp_file

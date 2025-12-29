@@ -191,12 +191,15 @@ async def test_value_received_saves_multiple_records(mock_api_client, mock_updat
 
 @pytest.mark.asyncio
 async def test_value_received_record_timestamp(mock_api_client, mock_update, mock_context):
-    """Test that saved record has correct timestamp."""
+    """Test that saved record has correct timestamp (UTC-aware)."""
+    from datetime import timezone
+    
     # Set up context
     mock_context.user_data["selected_patient"] = TEST_PATIENT
     mock_context.user_data["selected_record_type"] = TEST_RECORD_TYPE
     
-    before_save = datetime.now()
+    # Use UTC-aware timestamps for comparison (matches the handler's utc_now())
+    before_save = datetime.now(timezone.utc)
     
     # Mock API response with current timestamp
     mock_response = {**TEST_RECORD_RESPONSE}
@@ -205,14 +208,16 @@ async def test_value_received_record_timestamp(mock_api_client, mock_update, moc
     with patch('handlers.add_record.get_health_api_client', return_value=mock_api_client):
         await value_received(mock_update, mock_context)
     
-    after_save = datetime.now()
+    after_save = datetime.now(timezone.utc)
     
     # Verify timestamp was passed correctly to API
     call_kwargs = mock_api_client.save_record.call_args[1]
     timestamp = call_kwargs["timestamp"]
     assert isinstance(timestamp, datetime)
+    # Handler now uses UTC-aware timestamps
+    assert timestamp.tzinfo is not None, "Timestamp should be timezone-aware"
     assert before_save <= timestamp <= after_save, \
-        "Timestamp should be approximately now"
+        "Timestamp should be approximately now (UTC)"
 
 
 @pytest.mark.asyncio
@@ -231,8 +236,11 @@ async def test_value_received_api_connection_error(mock_api_client, mock_update,
     # Verify error message was sent
     mock_update.message.reply_text.assert_called_once()
     call_args = mock_update.message.reply_text.call_args
-    assert "❌" in call_args[0][0] or "Error" in call_args[0][0].lower(), \
-        "Should send error message for connection error"
+    # New error handler uses human-friendly messages
+    # Connection errors show "🔌 Unable to connect..." message
+    message_text = call_args[0][0]
+    assert "connect" in message_text.lower() or "try again" in message_text.lower(), \
+        f"Should send user-friendly connection error message, got: {message_text}"
     
     # Verify stays in ENTERING_VALUE state (allows retry)
     assert result == ENTERING_VALUE, "Should stay in ENTERING_VALUE to allow retry"

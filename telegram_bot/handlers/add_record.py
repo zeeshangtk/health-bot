@@ -2,9 +2,13 @@
 Add record conversation handler.
 Multi-step flow for recording health measurements.
 Rate limited to prevent abuse.
+
+UX Improvements:
+- Human-friendly error messages (no technical jargon)
+- UTC timestamps with clear formatting
+- Consistent emoji usage
 """
 import logging
-from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     ConversationHandler,
@@ -18,6 +22,8 @@ from telegram.ext import (
 from config import SUPPORTED_RECORD_TYPES
 from clients.health_api_client import get_health_api_client
 from utils.rate_limiter import rate_limit_commands
+from utils.datetime_utils import utc_now, format_for_user, parse_iso_safe
+from utils.error_handler import format_error
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +43,10 @@ async def add_record_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     try:
         patients = await client.get_patients()
-    except (ValueError, ConnectionError) as e:
-        logger.error(f"Error fetching patients: {e}")
-        await update.message.reply_text(
-            "❌ Error connecting to health service. Please try again later."
-        )
+    except Exception as e:
+        # Use centralized error handler for consistent, user-friendly messages
+        error_msg = format_error(e, context="fetching patients")
+        await update.message.reply_text(error_msg)
         return ConversationHandler.END
     
     if not patients:
@@ -94,14 +99,13 @@ async def patient_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             patient_names = [p["name"] for p in patients]
             if patient_name not in patient_names:
                 await query.edit_message_text(
-                    "❌ Invalid patient selection. Please try again with /add_record."
+                    "👤 Patient not found.\n\n"
+                    "Please try again with /add_record."
                 )
                 return ConversationHandler.END
-        except (ValueError, ConnectionError) as e:
-            logger.error(f"Error fetching patients: {e}")
-            await query.edit_message_text(
-                "❌ Error connecting to health service. Please try again later."
-            )
+        except Exception as e:
+            error_msg = format_error(e, context="validating patient")
+            await query.edit_message_text(error_msg)
             return ConversationHandler.END
         
         # Store patient in context
@@ -207,8 +211,8 @@ async def value_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return ConversationHandler.END
     
     try:
-        # Save record via API
-        timestamp = datetime.now()
+        # Save record via API with UTC timestamp
+        timestamp = utc_now()
         client = get_health_api_client()
         
         result = await client.save_record(
@@ -218,13 +222,14 @@ async def value_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             value=value_text
         )
         
-        # Parse timestamp from API response (ISO format string)
-        timestamp_str = datetime.fromisoformat(result["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
+        # Format timestamp for display using UTC-aware helper
+        response_dt = parse_iso_safe(result["timestamp"])
+        timestamp_display = format_for_user(response_dt) if response_dt else "Unknown"
         
-        # Build confirmation message
+        # Build confirmation message with consistent formatting
         confirmation_message = (
             "✅ **Record Saved Successfully!**\n\n"
-            f"📅 Timestamp: {timestamp_str}\n"
+            f"📅 Timestamp: {timestamp_display}\n"
             f"👤 Patient: {result['patient']}\n"
             f"📋 Record Type: {result['record_type']}\n"
             f"💾 Value: {result['value']}"
@@ -244,9 +249,15 @@ async def value_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             parse_mode="Markdown"
         )
         
+        # Log with structured fields for observability
         logger.info(
-            f"User {update.effective_user.id} saved record: "
-            f"patient={patient_name}, type={record_type}, value={value_text}"
+            "Record saved via Telegram",
+            extra={
+                "user_id": update.effective_user.id,
+                "patient": patient_name,
+                "record_type": record_type,
+                "value": value_text
+            }
         )
         
         # Clear context data
@@ -254,18 +265,12 @@ async def value_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         return ConversationHandler.END
         
-    except (ValueError, ConnectionError) as e:
-        logger.error(f"Error saving record: {e}", exc_info=True)
-        await update.message.reply_text(
-            "❌ Error saving record. Please try again or contact support.\n"
-            "Use /cancel to exit."
-        )
-        return ENTERING_VALUE
     except Exception as e:
-        logger.error(f"Unexpected error saving record: {e}", exc_info=True)
+        # Use centralized error handler for user-friendly messages
+        error_msg = format_error(e, context="saving record")
         await update.message.reply_text(
-            "❌ Error saving record. Please try again or contact support.\n"
-            "Use /cancel to exit."
+            f"{error_msg}\n\n"
+            "You can try again or use /cancel to exit."
         )
         return ENTERING_VALUE
 

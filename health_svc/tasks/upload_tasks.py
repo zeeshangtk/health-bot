@@ -4,6 +4,11 @@ Celery tasks for file upload processing.
 Note: Celery tasks run outside the FastAPI request context, so they cannot
 use FastAPI's Depends() mechanism. Instead, they create service instances
 directly using the DI helper functions from core.dependencies.
+
+Observability:
+    - Task success/failure metrics are recorded via MetricsCollector
+    - All logs include structured JSON fields for Grafana/Loki
+    - Task IDs are logged for traceability
 """
 import logging
 from datetime import datetime, timezone
@@ -23,6 +28,23 @@ from core.exceptions import PatientNotFoundError
 from schemas.medical_info import TestResult, HospitalInfo, PatientInfo, LabReport
 
 logger = logging.getLogger(__name__)
+
+
+def _record_task_metrics(success: bool) -> None:
+    """
+    Record task completion metrics for Grafana dashboards.
+    
+    This function is called at the end of task execution to track
+    success/failure rates. Safe to call even if metrics collector
+    is not initialized (e.g., during testing).
+    """
+    try:
+        from core.middleware import get_metrics_collector
+        collector = get_metrics_collector()
+        collector.record_task_result(success=success)
+    except Exception as e:
+        # Don't fail the task if metrics recording fails
+        logger.warning(f"Failed to record task metrics: {e}")
 
 # Constants
 DEFAULT_RETRY_BASE_DELAY = 2  # seconds
@@ -364,22 +386,57 @@ def process_uploaded_file(
             records_saved=records_saved
         )
         
-        logger.info(f"Successfully processed file: {filename} at {result['processed_at']}")
+        logger.info(
+            f"Successfully processed file: {filename}",
+            extra={
+                "task_id": self.request.id,
+                "uploaded_file": filename,  # Note: can't use "filename" - reserved by LogRecord
+                "records_saved": records_saved,
+                "processed_at": result['processed_at']
+            }
+        )
+        
+        # Record success metric for Grafana dashboard
+        _record_task_metrics(success=True)
+        
         return result
         
     except NON_RETRYABLE_ERRORS as exc:
         logger.error(
             f"Non-retryable error processing {filename}: {exc}",
-            exc_info=True
+            extra={
+                "task_id": self.request.id,
+                "uploaded_file": filename,  # Note: can't use "filename" - reserved by LogRecord
+                "error_type": type(exc).__name__
+            }
         )
+        # Record failure metric for Grafana dashboard
+        _record_task_metrics(success=False)
         # Don't retry validation/data errors
         raise
         
     except Exception as exc:
-        logger.error(
-            f"Error processing file {filename}: {exc}",
-            exc_info=True
-        )
+        # Only record failure if we've exhausted retries
+        if self.request.retries >= MAX_RETRIES:
+            logger.error(
+                f"Max retries exhausted for {filename}: {exc}",
+                extra={
+                    "task_id": self.request.id,
+                    "uploaded_file": filename,  # Note: can't use "filename" - reserved by LogRecord
+                    "retries": self.request.retries
+                }
+            )
+            _record_task_metrics(success=False)
+        else:
+            logger.warning(
+                f"Retrying task for {filename}: {exc}",
+                extra={
+                    "task_id": self.request.id,
+                    "uploaded_file": filename,  # Note: can't use "filename" - reserved by LogRecord
+                    "retry_count": self.request.retries + 1
+                }
+            )
+        
         # Retry with exponential backoff
         raise self.retry(
             exc=exc,

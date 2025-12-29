@@ -7,6 +7,11 @@ All endpoints require API key authentication.
 Architecture:
     HTTP Request → Router (this file) → Services → Repositories → Database
 
+Safety Features:
+    - Default query limits to prevent unbounded queries
+    - Warnings logged when limits are applied or exceeded
+    - UTC timestamp enforcement via datetime_utils
+
 Dependency Injection:
     Services are injected via FastAPI's Depends() mechanism.
     The DI chain is defined in core/dependencies.py.
@@ -47,6 +52,16 @@ router = APIRouter(
 
 
 # =============================================================================
+# SAFE DEFAULTS
+# =============================================================================
+# These constants define safe defaults for query parameters.
+# Prevents unbounded queries that could overwhelm the Raspberry Pi.
+
+DEFAULT_QUERY_LIMIT = 100  # Default limit if none specified
+MAX_QUERY_LIMIT = 1000     # Maximum allowed limit
+
+
+# =============================================================================
 # ENDPOINTS
 # =============================================================================
 # Note: Services are injected via Depends(). No module-level instantiation.
@@ -66,14 +81,14 @@ async def create_record(
     """
     Create a new health record.
     
-    - **timestamp**: ISO format datetime when the measurement was taken
+    - **timestamp**: ISO format datetime when the measurement was taken (UTC recommended)
     - **patient**: Patient name (must exist in the system)
     - **record_type**: Type of measurement (e.g., 'BP', 'Weight', 'Temperature')
     - **value**: The actual measurement value
     - **unit**: Unit of measurement (optional, e.g., 'mg/dl', 'mmHg', 'kg')
     - **lab_name**: Name of the laboratory or facility (optional)
     
-    Returns the created health record.
+    Returns the created health record with UTC timestamp.
     
     Raises:
     - 404 Not Found: If the patient doesn't exist (PatientNotFoundError)
@@ -99,12 +114,28 @@ async def create_record(
     "",
     response_model=List[HealthRecordResponse],
     summary="List health records",
-    description="Retrieve health records with optional filtering by patient name, record type, and result limit."
+    description=f"Retrieve health records with optional filtering by patient name, record type, and result limit. "
+                f"Default limit is {DEFAULT_QUERY_LIMIT}, maximum is {MAX_QUERY_LIMIT}."
 )
 async def list_records(
-    patient: Optional[str] = Query(None, description="Filter by patient name (exact match)", example="John Doe"),
-    record_type: Optional[str] = Query(None, description="Filter by record type (e.g., 'BP', 'Weight')", example="BP"),
-    limit: Optional[int] = Query(None, ge=1, le=1000, description="Maximum number of records to return (1-1000)", example=10),
+    patient: Optional[str] = Query(
+        None, 
+        description="Filter by patient name (exact match)", 
+        example="John Doe"
+    ),
+    record_type: Optional[str] = Query(
+        None, 
+        description="Filter by record type (e.g., 'BP', 'Weight')", 
+        example="BP"
+    ),
+    limit: Optional[int] = Query(
+        None, 
+        ge=1, 
+        le=MAX_QUERY_LIMIT, 
+        description=f"Maximum number of records to return (1-{MAX_QUERY_LIMIT}). "
+                    f"Defaults to {DEFAULT_QUERY_LIMIT} if not specified.",
+        example=10
+    ),
     health_service: HealthService = Depends(get_health_service)
 ):
     """
@@ -113,15 +144,32 @@ async def list_records(
     Query Parameters:
     - **patient**: Filter records by patient name (optional, exact match)
     - **record_type**: Filter records by type (optional, e.g., 'BP', 'Weight', 'Temperature')
-    - **limit**: Maximum number of records to return (optional, 1-1000)
+    - **limit**: Maximum number of records to return (optional, 1-1000, defaults to 100)
     
     Returns a list of health records matching the filters.
     If no filters are provided, returns all records (up to the limit if specified).
+    
+    Safe Defaults:
+    - If no limit is specified, applies default of 100 to prevent unbounded queries
+    - Logs a warning when default limit is applied
     """
+    # Apply safe default limit if not specified
+    effective_limit = limit
+    if effective_limit is None:
+        effective_limit = DEFAULT_QUERY_LIMIT
+        logger.warning(
+            "No limit specified, applying default",
+            extra={
+                "default_limit": DEFAULT_QUERY_LIMIT,
+                "patient_filter": patient,
+                "record_type_filter": record_type,
+            }
+        )
+    
     return health_service.get_records(
         patient=patient,
         record_type=record_type,
-        limit=limit
+        limit=effective_limit
     )
 
 
@@ -143,7 +191,7 @@ async def get_html_view(
     - **patient_name**: Patient name to generate graph for (required)
     
     Returns an HTML page containing an interactive Plotly graph showing:
-    - X-axis: Timestamp of measurements
+    - X-axis: Timestamp of measurements (UTC)
     - Y-axis: Measurement values
     - Multiple traces: One for each record type (Sugar, Creatinine, BP, etc.)
     

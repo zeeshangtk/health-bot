@@ -160,22 +160,44 @@ def get_rate_limiter(
     return _limiters[name]
 
 
+def _format_rate_limit_message(retry_after: float) -> str:
+    """
+    Format a human-friendly rate limiting message.
+    
+    Args:
+        retry_after: Seconds until retry is allowed.
+    
+    Returns:
+        User-friendly rate limit message.
+    """
+    if retry_after < 1:
+        return "⏰ Please wait a moment before trying again."
+    elif retry_after < 60:
+        secs = int(retry_after)
+        return f"⏰ Please wait about {secs} second{'s' if secs != 1 else ''} before trying again."
+    else:
+        mins = int(retry_after / 60)
+        return f"⏰ Please wait about {mins} minute{'s' if mins != 1 else ''} before trying again."
+
+
 def rate_limit(
     max_requests: int = 10,
     window_seconds: int = 60,
     min_interval_seconds: float = 1.0,
     limiter_name: Optional[str] = None,
-    on_limited_message: str = "⏳ You're sending requests too quickly. Please wait {retry_after:.1f} seconds."
+    on_limited_message: Optional[str] = None
 ) -> Callable:
     """
     Decorator to apply rate limiting to Telegram bot handlers.
+    
+    Uses human-friendly messages that avoid technical jargon.
     
     Args:
         max_requests: Maximum requests allowed in the window.
         window_seconds: Size of the sliding window in seconds.
         min_interval_seconds: Minimum seconds between consecutive requests.
         limiter_name: Optional name for a shared rate limiter. If None, uses handler function name.
-        on_limited_message: Message to send when rate limited. Can use {retry_after} placeholder.
+        on_limited_message: Optional custom message. If None, uses human-friendly default.
     
     Returns:
         Decorated handler function.
@@ -206,13 +228,22 @@ def rate_limit(
             is_allowed, retry_after = limiter.is_allowed(user_id)
             
             if not is_allowed:
+                # Log with structured fields (for backend aggregation if needed)
                 logger.warning(
-                    f"Rate limited user {user_id} ({user.username}) on {name}. "
-                    f"Retry after: {retry_after:.1f}s"
+                    "Rate limited user",
+                    extra={
+                        "user_id": user_id,
+                        "username": user.username,
+                        "handler": name,
+                        "retry_after_seconds": round(retry_after, 1)
+                    }
                 )
                 
-                # Send rate limit message
-                message = on_limited_message.format(retry_after=retry_after)
+                # Send human-friendly rate limit message
+                if on_limited_message:
+                    message = on_limited_message.format(retry_after=retry_after)
+                else:
+                    message = _format_rate_limit_message(retry_after)
                 
                 if update.callback_query:
                     await update.callback_query.answer(message, show_alert=True)
@@ -240,13 +271,16 @@ def rate_limit_commands(func: Callable) -> Callable:
 
 
 def rate_limit_uploads(func: Callable) -> Callable:
-    """Rate limit for file uploads: 5 per minute (more restrictive)."""
+    """
+    Rate limit for file uploads: 5 per minute (more restrictive).
+    Uses human-friendly message.
+    """
     return rate_limit(
         max_requests=5,
         window_seconds=60,
         min_interval_seconds=2.0,
         limiter_name="uploads",
-        on_limited_message="⏳ Upload rate limited. Please wait {retry_after:.1f} seconds before uploading again."
+        on_limited_message="⏰ Please wait a moment before uploading another file."
     )(func)
 
 
