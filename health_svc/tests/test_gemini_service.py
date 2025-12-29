@@ -255,7 +255,7 @@ class TestTransformToLabReportFormat:
         assert result["results"] == []
     
     def test_transform_with_missing_fields(self, gemini_service):
-        """Test transformation with missing optional fields."""
+        """Test transformation with missing optional fields provides defaults."""
         data = {
             "hospital_info": {},
             "patient_info": {},
@@ -268,8 +268,11 @@ class TestTransformToLabReportFormat:
         
         result = gemini_service._transform_to_lab_report_format(data)
         
-        assert result["hospital_info"] == {}
-        assert result["patient_info"] == {}
+        # Required fields should have defaults when missing
+        assert result["hospital_info"]["hospital_name"] == "Unknown"
+        assert result["hospital_info"]["report_type"] == "Laboratory Reports"
+        assert result["patient_info"]["patient_name"] == "Unknown Patient"
+        assert result["patient_info"]["sample_date"] == "01-01-2025 12:00 AM"
         assert len(result["results"]) == 1
     
     def test_transform_with_non_list_category(self, gemini_service):

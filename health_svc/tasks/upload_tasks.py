@@ -345,6 +345,14 @@ def process_uploaded_file(
         lab_report = extract_lab_report_data(file_path_obj)
         logger.info(f"Successfully extracted lab report data from file: {filename}")
         
+        # Step 2.1: Override patient name if provided (takes precedence over Gemini extraction)
+        if patient_name and lab_report.get("patient_info"):
+            extracted_name = lab_report["patient_info"].get("patient_name", "Unknown")
+            lab_report["patient_info"]["patient_name"] = patient_name
+            logger.info(
+                f"Overriding extracted patient name '{extracted_name}' with provided name '{patient_name}'"
+            )
+        
         # Step 2.5: Upload to Paperless NGX
         try:
             paperless_service = PaperlessNgxService()

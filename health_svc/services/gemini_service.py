@@ -277,7 +277,9 @@ Before responding:
         """
         Transform Gemini response to match LabReport Pydantic model structure.
         
-        Converts biochemistry_results (dict of categories) into a flat results list.
+        Converts:
+        - biochemistry_results (dict of categories) into a flat results list
+        - Gemini field names to LabReport schema field names
         
         Args:
             extracted_data: Raw data from Gemini API with biochemistry_results as dict.
@@ -286,9 +288,35 @@ Before responding:
             dict: Transformed data matching LabReport.model_dump() structure.
         """
         # Extract the three main sections
-        hospital_info = extracted_data.get("hospital_info", {})
-        patient_info = extracted_data.get("patient_info", {})
+        raw_hospital_info = extracted_data.get("hospital_info", {})
+        raw_patient_info = extracted_data.get("patient_info", {})
         biochemistry_results = extracted_data.get("biochemistry_results", {})
+        
+        # Transform hospital_info field names to match HospitalInfo schema
+        # Gemini returns: name, report_type
+        # Schema expects: hospital_name, report_type
+        hospital_info = {
+            "hospital_name": raw_hospital_info.get("name") or raw_hospital_info.get("hospital_name") or "Unknown",
+            "report_type": raw_hospital_info.get("report_type") or "Laboratory Reports"
+        }
+        
+        # Transform patient_info field names to match PatientInfo schema
+        # Gemini returns: name, id, age, sex, sample_date, referring_doctor
+        # Schema expects: patient_name, patient_id, age_sex, sample_date, referring_doctor_full_name_titles
+        age = raw_patient_info.get("age", "")
+        sex = raw_patient_info.get("sex", "")
+        # Combine age and sex if both present, otherwise use age_sex directly if provided
+        age_sex = raw_patient_info.get("age_sex")
+        if not age_sex and (age or sex):
+            age_sex = f"{age} / {sex}".strip(" /") if age or sex else None
+        
+        patient_info = {
+            "patient_name": raw_patient_info.get("name") or raw_patient_info.get("patient_name") or "Unknown Patient",
+            "patient_id": raw_patient_info.get("id") or raw_patient_info.get("patient_id"),
+            "age_sex": age_sex,
+            "sample_date": raw_patient_info.get("sample_date") or "01-01-2025 12:00 AM",
+            "referring_doctor_full_name_titles": raw_patient_info.get("referring_doctor") or raw_patient_info.get("referring_doctor_full_name_titles")
+        }
         
         # Flatten biochemistry_results dict into a single list
         results = []
