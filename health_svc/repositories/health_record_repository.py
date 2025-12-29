@@ -3,28 +3,41 @@ Repository for health record database operations.
 
 This module contains all database access for health record-related operations.
 Uses single-transaction patterns to avoid race conditions when returning created records.
+
+Architecture:
+    HealthRecordRepository is the data access layer for health records.
+    It should be injected via core.dependencies.get_health_record_repository().
+    
+All SQL is encapsulated in this repository - no SQL in service or API layers.
 """
 import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Tuple
 
-from repositories.base import Database, get_database
+from repositories.base import Database
 from models.health_record import HealthRecord
+from core.datetime_utils import format_iso, parse_datetime
 
 logger = logging.getLogger(__name__)
 
 
 class HealthRecordRepository:
-    """Repository for health record CRUD operations."""
+    """
+    Repository for health record CRUD operations.
     
-    def __init__(self, db: Optional[Database] = None):
+    This repository encapsulates all database operations for health records.
+    It should be instantiated via core.dependencies.get_health_record_repository().
+    """
+    
+    def __init__(self, db: Database):
         """
         Initialize the health record repository.
         
         Args:
-            db: Optional Database instance. If not provided, uses global instance.
+            db: Database instance for data access.
+                Injected via core.dependencies.get_health_record_repository().
         """
-        self._db = db or get_database()
+        self._db = db
     
     def save(
         self,
@@ -57,12 +70,15 @@ class HealthRecordRepository:
         cursor = conn.cursor()
         
         try:
+            # Format timestamp as ISO 8601 UTC string for storage
+            timestamp_str = format_iso(timestamp)
+            
             cursor.execute("""
                 INSERT INTO health_records 
                 (timestamp, patient_id, record_type, value, unit, lab_name)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (
-                timestamp.isoformat(),
+                timestamp_str,
                 patient_id,
                 record_type,
                 value,
@@ -148,8 +164,10 @@ class HealthRecordRepository:
         
         records = []
         for row in rows:
+            # Parse timestamp using our UTC-aware utility
+            timestamp = parse_datetime(row[0])
             records.append(HealthRecord(
-                timestamp=datetime.fromisoformat(row[0]),
+                timestamp=timestamp,
                 patient=row[1],  # Patient name from JOIN
                 record_type=row[2],
                 value=row[3],
@@ -193,7 +211,8 @@ class HealthRecordRepository:
             
             # Prepare all records for batch insert
             record_ids = []
-            timestamp_iso = timestamp.isoformat()
+            # Format timestamp as ISO 8601 UTC string for storage
+            timestamp_str = format_iso(timestamp)
             
             for test_result in test_results:
                 cursor.execute("""
@@ -201,7 +220,7 @@ class HealthRecordRepository:
                     (timestamp, patient_id, record_type, value, unit, lab_name)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (
-                    timestamp_iso,
+                    timestamp_str,
                     patient_id,
                     test_result["test_name"],
                     test_result["results"],

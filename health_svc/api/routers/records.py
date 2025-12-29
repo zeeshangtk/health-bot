@@ -1,8 +1,26 @@
 """
 Records router - health record and image upload endpoints.
+
+This router handles health record CRUD operations and file uploads.
+All endpoints require API key authentication.
+
+Architecture:
+    HTTP Request → Router (this file) → Services → Repositories → Database
+
+Dependency Injection:
+    Services are injected via FastAPI's Depends() mechanism.
+    The DI chain is defined in core/dependencies.py.
+    
+    Example flow for create_record:
+    1. Request arrives at /api/v1/records (POST)
+    2. FastAPI calls get_health_service() dependency
+    3. get_health_service() calls get_patient_repository() and get_health_record_repository()
+    4. Repositories receive get_database() injection
+    5. HealthService instance is created with injected repositories
+    6. Endpoint handler receives the fully configured service
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Response, Form
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Response, Form
 from typing import Optional, List
 
 from schemas import (
@@ -13,8 +31,12 @@ from schemas import (
 from services import HealthService, UploadService
 from services.graph import GraphService
 from core.auth import verify_api_key
+from core.dependencies import (
+    get_health_service,
+    get_upload_service,
+    get_graph_service
+)
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
@@ -23,11 +45,12 @@ router = APIRouter(
     dependencies=[Depends(verify_api_key)],  # Require API key for all endpoints
 )
 
-# Initialize services
-health_service = HealthService()
-upload_service = UploadService()
-graph_service = GraphService()
 
+# =============================================================================
+# ENDPOINTS
+# =============================================================================
+# Note: Services are injected via Depends(). No module-level instantiation.
+# This enables proper testing via dependency_overrides and ensures clean layering.
 
 @router.post(
     "",
@@ -36,7 +59,10 @@ graph_service = GraphService()
     summary="Create a new health record",
     description="Add a new health measurement record for a patient. Supports various record types like blood pressure, weight, temperature, etc."
 )
-async def create_record(record: HealthRecordCreate):
+async def create_record(
+    record: HealthRecordCreate,
+    health_service: HealthService = Depends(get_health_service)
+):
     """
     Create a new health record.
     
@@ -48,9 +74,18 @@ async def create_record(record: HealthRecordCreate):
     - **lab_name**: Name of the laboratory or facility (optional)
     
     Returns the created health record.
-    Raises 400 Bad Request if the patient doesn't exist or validation fails.
+    
+    Raises:
+    - 404 Not Found: If the patient doesn't exist (PatientNotFoundError)
+    - 500 Internal Server Error: For database errors (DatabaseError)
+    
+    Note: Exceptions are raised by the service layer and handled by
+    the exception handlers registered in main.py via setup_exception_handlers().
     """
-    result = health_service.save_record(
+    # Service raises PatientNotFoundError if patient doesn't exist
+    # Service raises DatabaseError for database failures
+    # Both are handled by setup_exception_handlers()
+    return health_service.save_record(
         timestamp=record.timestamp,
         patient=record.patient,
         record_type=record.record_type,
@@ -58,9 +93,6 @@ async def create_record(record: HealthRecordCreate):
         unit=record.unit,
         lab_name=record.lab_name
     )
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result["message"])
-    return result["record"]
 
 
 @router.get(
@@ -72,7 +104,8 @@ async def create_record(record: HealthRecordCreate):
 async def list_records(
     patient: Optional[str] = Query(None, description="Filter by patient name (exact match)", example="John Doe"),
     record_type: Optional[str] = Query(None, description="Filter by record type (e.g., 'BP', 'Weight')", example="BP"),
-    limit: Optional[int] = Query(None, ge=1, le=1000, description="Maximum number of records to return (1-1000)", example=10)
+    limit: Optional[int] = Query(None, ge=1, le=1000, description="Maximum number of records to return (1-1000)", example=10),
+    health_service: HealthService = Depends(get_health_service)
 ):
     """
     Get health records with optional filters.
@@ -85,12 +118,11 @@ async def list_records(
     Returns a list of health records matching the filters.
     If no filters are provided, returns all records (up to the limit if specified).
     """
-    records = health_service.get_records(
+    return health_service.get_records(
         patient=patient,
         record_type=record_type,
         limit=limit
     )
-    return records
 
 
 @router.get(
@@ -100,7 +132,9 @@ async def list_records(
                 "The graph displays all record types (e.g., Sugar, Creatinine, BP) with timestamps on x-axis and values on y-axis."
 )
 async def get_html_view(
-    patient_name: str = Query(..., description="Patient name to generate graph for", example="John Doe")
+    patient_name: str = Query(..., description="Patient name to generate graph for", example="John Doe"),
+    health_service: HealthService = Depends(get_health_service),
+    graph_service: GraphService = Depends(get_graph_service)
 ):
     """
     Get HTML graph view of patient health records.
@@ -140,7 +174,8 @@ async def get_html_view(
 )
 async def upload_image(
     file: UploadFile = File(..., description="Image file to upload (JPEG, PNG, GIF, or BMP)"),
-    patient: Optional[str] = Form(None, description="Patient name associated with the lab report")
+    patient: Optional[str] = Form(None, description="Patient name associated with the lab report"),
+    upload_service: UploadService = Depends(get_upload_service)
 ):
     """
     Upload an image file.
@@ -159,7 +194,10 @@ async def upload_image(
     - 415 Unsupported Media Type: If the upload is not multipart/form-data
     - 500 Internal Server Error: For file system write failures
     """
-    unique_filename, file_path, task_id = await upload_service.save_uploaded_file(file, patient_name=patient)
+    unique_filename, file_path, task_id = await upload_service.save_uploaded_file(
+        file, 
+        patient_name=patient
+    )
     
     return ImageUploadResponse(
         status="success",

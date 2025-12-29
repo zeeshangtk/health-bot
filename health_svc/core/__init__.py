@@ -1,7 +1,52 @@
 """
 Core module for application configuration, logging, and shared constants.
+
+This module provides:
+- Settings: Application configuration via pydantic-settings
+- Dependency injection: FastAPI Depends() functions for services and repositories
+- Exceptions: Domain-specific exception classes with HTTP status codes
+- Datetime utilities: UTC-first datetime handling
+- Metric registry: Health metric definitions and parsing
 """
 from core.config import settings, Settings
+
+# Dependency injection - import functions for FastAPI Depends()
+from core.dependencies import (
+    get_database,
+    get_patient_repository,
+    get_health_record_repository,
+    get_patient_service,
+    get_health_service,
+    get_graph_service,
+    get_upload_service,
+    reset_database,
+)
+
+# Exception classes for consistent error handling
+from core.exceptions import (
+    HealthServiceError,
+    PatientNotFoundError,
+    DuplicatePatientError,
+    RecordNotFoundError,
+    InvalidRecordDataError,
+    DatabaseError,
+    UploadError,
+    InvalidFileTypeError,
+    FileTooLargeError,
+    ExternalServiceError,
+    GeminiServiceError,
+    setup_exception_handlers,
+)
+
+# UTC datetime utilities
+from core.datetime_utils import (
+    utc_now,
+    to_utc,
+    parse_datetime,
+    format_iso,
+    to_db_string,
+    from_db_string,
+)
 from core.config import (
     # Backwards-compatible exports
     DATABASE_DIR,
@@ -50,8 +95,38 @@ from core.metric_registry import (
 )
 
 __all__ = [
+    # Settings
     "settings",
     "Settings",
+    # Dependency injection
+    "get_database",
+    "get_patient_repository",
+    "get_health_record_repository",
+    "get_patient_service",
+    "get_health_service",
+    "get_graph_service",
+    "get_upload_service",
+    "reset_database",
+    # Exceptions
+    "HealthServiceError",
+    "PatientNotFoundError",
+    "DuplicatePatientError",
+    "RecordNotFoundError",
+    "InvalidRecordDataError",
+    "DatabaseError",
+    "UploadError",
+    "InvalidFileTypeError",
+    "FileTooLargeError",
+    "ExternalServiceError",
+    "GeminiServiceError",
+    "setup_exception_handlers",
+    # Datetime utilities
+    "utc_now",
+    "to_utc",
+    "parse_datetime",
+    "format_iso",
+    "to_db_string",
+    "from_db_string",
     # Backwards-compatible exports
     "DATABASE_DIR",
     "DATABASE_FILE",

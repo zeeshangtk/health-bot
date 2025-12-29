@@ -3,31 +3,49 @@ Service layer for health record operations.
 
 This service contains business logic for health record management
 and orchestrates calls to repositories.
+
+Architecture:
+    API Layer (routers) → HealthService → Repositories → Database
+
+Dependency Injection:
+    HealthService receives its repositories via constructor injection.
+    Use core.dependencies.get_health_service() in routers with Depends().
 """
+import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from repositories import PatientRepository, HealthRecordRepository
 from schemas import HealthRecordResponse
+from core.exceptions import PatientNotFoundError, DatabaseError
+from core.datetime_utils import to_utc, format_iso
+
+logger = logging.getLogger(__name__)
 
 
 class HealthService:
-    """Service layer for health record operations."""
+    """
+    Service layer for health record operations.
+    
+    Handles business logic for health record management including
+    validation, patient lookup, and coordination with repositories.
+    """
     
     def __init__(
         self,
-        patient_repository: Optional[PatientRepository] = None,
-        health_record_repository: Optional[HealthRecordRepository] = None
+        patient_repository: PatientRepository,
+        health_record_repository: HealthRecordRepository
     ):
         """
         Initialize the health service.
         
         Args:
-            patient_repository: Optional PatientRepository instance.
-            health_record_repository: Optional HealthRecordRepository instance.
+            patient_repository: PatientRepository instance for patient lookups.
+            health_record_repository: HealthRecordRepository instance for record operations.
+                                      Both are injected via core.dependencies.get_health_service().
         """
-        self._patient_repo = patient_repository or PatientRepository()
-        self._record_repo = health_record_repository or HealthRecordRepository()
+        self._patient_repo = patient_repository
+        self._record_repo = health_record_repository
     
     def save_record(
         self,
@@ -37,32 +55,40 @@ class HealthService:
         value: str,
         unit: Optional[str] = None,
         lab_name: Optional[str] = "self"
-    ) -> Dict[str, Any]:
+    ) -> HealthRecordResponse:
         """
         Save a health record.
         
         Args:
-            timestamp: When the measurement was taken.
+            timestamp: When the measurement was taken (will be normalized to UTC).
             patient: Patient name.
             record_type: Type of health record.
             value: The measurement value.
             unit: Unit of measurement (optional).
-            lab_name: Name of the lab (optional).
+            lab_name: Name of the lab (optional, defaults to "self").
         
         Returns:
-            Dict with 'success' bool and either 'record' (HealthRecordResponse) 
-            or 'message' (error message).
+            HealthRecordResponse: The created health record.
+        
+        Raises:
+            PatientNotFoundError: If the patient doesn't exist.
+            DatabaseError: If a database error occurs.
         """
+        logger.info(f"Saving health record for patient: {patient}, type: {record_type}")
+        
+        # Get patient ID from name
+        patient_id = self._patient_repo.get_id_by_name(patient)
+        if patient_id is None:
+            logger.warning(f"Patient not found: {patient}")
+            raise PatientNotFoundError(patient_name=patient)
+        
         try:
-            # Get patient ID from name
-            patient_id = self._patient_repo.get_id_by_name(patient)
-            if patient_id is None:
-                return {"success": False, "message": f"Patient '{patient}' not found in database"}
+            # Normalize timestamp to UTC
+            utc_timestamp = to_utc(timestamp)
             
-            # Save the record and get the created record in a single transaction,
-            # avoiding race conditions when returning newly created records
+            # Save the record and get the created record in a single transaction
             _, record_dict = self._record_repo.save(
-                timestamp=timestamp,
+                timestamp=utc_timestamp,
                 patient_id=patient_id,
                 record_type=record_type,
                 value=value,
@@ -70,21 +96,18 @@ class HealthService:
                 lab_name=lab_name
             )
             
-            return {
-                "success": True,
-                "record": HealthRecordResponse(
-                    timestamp=record_dict["timestamp"],
-                    patient=record_dict["patient"],
-                    record_type=record_dict["record_type"],
-                    value=record_dict["value"],
-                    unit=record_dict["unit"],
-                    lab_name=record_dict["lab_name"]
-                )
-            }
-        except ValueError as e:
-            return {"success": False, "message": str(e)}
+            logger.info(f"Health record saved successfully for patient: {patient}")
+            return HealthRecordResponse(
+                timestamp=record_dict["timestamp"],
+                patient=record_dict["patient"],
+                record_type=record_dict["record_type"],
+                value=record_dict["value"],
+                unit=record_dict["unit"],
+                lab_name=record_dict["lab_name"]
+            )
         except Exception as e:
-            return {"success": False, "message": f"Database error: {str(e)}"}
+            logger.error(f"Database error saving health record: {e}", exc_info=True)
+            raise DatabaseError(operation="save_record") from e
     
     def get_records(
         self,
@@ -111,7 +134,7 @@ class HealthService:
         
         return [
             HealthRecordResponse(
-                timestamp=record.timestamp.isoformat(),
+                timestamp=format_iso(record.timestamp),
                 patient=record.patient,
                 record_type=record.record_type,
                 value=record.value,
@@ -133,27 +156,40 @@ class HealthService:
         
         Args:
             patient_name: Name of the patient.
-            timestamp: When the sample was collected.
+            timestamp: When the sample was collected (will be normalized to UTC).
             lab_name: Name of the laboratory/hospital.
-            test_results: List of test result dictionaries.
+            test_results: List of test result dictionaries with keys:
+                         test_name, results, unit (optional).
         
         Returns:
             int: Number of records saved.
         
         Raises:
-            ValueError: If patient is not found in database.
+            PatientNotFoundError: If patient is not found in database.
+            DatabaseError: If a database error occurs.
         """
+        logger.info(f"Saving {len(test_results)} lab report records for patient: {patient_name}")
+        
         # Get patient ID from name
         patient_id = self._patient_repo.get_id_by_name(patient_name)
         if patient_id is None:
-            raise ValueError(f"Patient '{patient_name}' not found in database")
+            logger.warning(f"Patient not found: {patient_name}")
+            raise PatientNotFoundError(patient_name=patient_name)
         
-        # Save records atomically
-        record_ids = self._record_repo.save_batch(
-            patient_id=patient_id,
-            timestamp=timestamp,
-            lab_name=lab_name,
-            test_results=test_results
-        )
-        
-        return len(record_ids)
+        try:
+            # Normalize timestamp to UTC
+            utc_timestamp = to_utc(timestamp)
+            
+            # Save records atomically
+            record_ids = self._record_repo.save_batch(
+                patient_id=patient_id,
+                timestamp=utc_timestamp,
+                lab_name=lab_name,
+                test_results=test_results
+            )
+            
+            logger.info(f"Saved {len(record_ids)} records for patient: {patient_name}")
+            return len(record_ids)
+        except Exception as e:
+            logger.error(f"Database error saving lab report records: {e}", exc_info=True)
+            raise DatabaseError(operation="save_lab_report_records") from e

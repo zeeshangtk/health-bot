@@ -2,27 +2,39 @@
 Repository for patient database operations.
 
 This module contains all database access for patient-related operations.
+
+Architecture:
+    PatientRepository is the data access layer for patients.
+    It should be injected via core.dependencies.get_patient_repository().
+    
+All SQL is encapsulated in this repository - no SQL in service or API layers.
 """
 import sqlite3
 import logging
 from typing import Optional, List, Dict, Any
 
-from repositories.base import Database, get_database
+from repositories.base import Database
 
 logger = logging.getLogger(__name__)
 
 
 class PatientRepository:
-    """Repository for patient CRUD operations."""
+    """
+    Repository for patient CRUD operations.
     
-    def __init__(self, db: Optional[Database] = None):
+    This repository encapsulates all database operations for patients.
+    It should be instantiated via core.dependencies.get_patient_repository().
+    """
+    
+    def __init__(self, db: Database):
         """
         Initialize the patient repository.
         
         Args:
-            db: Optional Database instance. If not provided, uses global instance.
+            db: Database instance for data access.
+                Injected via core.dependencies.get_patient_repository().
         """
-        self._db = db or get_database()
+        self._db = db
     
     def add(self, name: str) -> Optional[Dict[str, Any]]:
         """

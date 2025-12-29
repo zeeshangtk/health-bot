@@ -3,6 +3,10 @@ Base database connection and initialization.
 
 This module handles database connection management and schema initialization.
 Optimized for SQLite concurrency with WAL mode and busy_timeout.
+
+IMPORTANT: Database instantiation should be done through the DI layer.
+Use core.dependencies.get_database() instead of instantiating directly.
+This ensures proper lifecycle management and testability.
 """
 import sqlite3
 import logging
@@ -10,6 +14,7 @@ from typing import Optional
 from pathlib import Path
 
 from core.config import DATABASE_PATH, DATABASE_BUSY_TIMEOUT
+from core.datetime_utils import utc_now, format_iso
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +27,15 @@ class Database:
     - WAL mode for better concurrent read/write performance
     - Busy timeout to handle lock contention gracefully
     - Foreign key constraints enabled by default
+    - UTC timestamps for all database operations
+    
+    Usage:
+        # Via dependency injection (recommended):
+        from core.dependencies import get_database
+        db = get_database()
+        
+        # Direct instantiation (for testing):
+        db = Database(db_path="/tmp/test.db")
     """
     
     def __init__(self, db_path: Optional[str] = None, busy_timeout: Optional[int] = None):
@@ -70,6 +84,7 @@ class Database:
             logger.warning(f"Failed to enable WAL mode, current mode: {result}")
         
         # Create patients table first (referenced by foreign key)
+        # Note: created_at uses application-generated UTC timestamps for consistency
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS patients (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,14 +130,38 @@ class Database:
         return conn
 
 
-# Global database instance
+# =============================================================================
+# DEPRECATED: Global singleton pattern
+# =============================================================================
+# The following functions are DEPRECATED and kept for backward compatibility.
+# Use core.dependencies.get_database() instead for proper DI.
+
 _db_instance: Optional[Database] = None
 
 
 def get_database() -> Database:
-    """Get or create the global database instance."""
+    """
+    DEPRECATED: Get or create the global database instance.
+    
+    Use core.dependencies.get_database() instead for proper dependency injection.
+    This function is kept for backward compatibility with existing code.
+    """
     global _db_instance
     if _db_instance is None:
+        logger.warning(
+            "Using deprecated get_database() from repositories.base. "
+            "Migrate to core.dependencies.get_database() for proper DI."
+        )
         _db_instance = Database()
     return _db_instance
+
+
+def reset_database_instance() -> None:
+    """
+    Reset the global database instance (for testing).
+    
+    DEPRECATED: Use core.dependencies.reset_database() instead.
+    """
+    global _db_instance
+    _db_instance = None
 

@@ -1,5 +1,9 @@
 """
 Celery tasks for file upload processing.
+
+Note: Celery tasks run outside the FastAPI request context, so they cannot
+use FastAPI's Depends() mechanism. Instead, they create service instances
+directly using the DI helper functions from core.dependencies.
 """
 import logging
 from datetime import datetime, timezone
@@ -8,10 +12,12 @@ from typing import List, Dict, Any, Tuple, Optional
 from pydantic import ValidationError
 from celery import shared_task
 
-# Import services directly to avoid circular imports
+# Import services and DI helpers
 from services.health_service import HealthService
 from services.gemini_service import GeminiService
 from services.paperless_ngx_service import PaperlessNgxService
+from core.dependencies import get_patient_repository, get_health_record_repository
+from core.exceptions import PatientNotFoundError
 
 # Import schemas from single source of truth
 from schemas.medical_info import TestResult, HospitalInfo, PatientInfo, LabReport
@@ -21,7 +27,9 @@ logger = logging.getLogger(__name__)
 # Constants
 DEFAULT_RETRY_BASE_DELAY = 2  # seconds
 MAX_RETRIES = 3
-NON_RETRYABLE_ERRORS = (FileNotFoundError, ValueError, ValidationError)
+# Non-retryable errors - these indicate bad data or missing resources
+# that won't be fixed by retrying
+NON_RETRYABLE_ERRORS = (FileNotFoundError, ValueError, ValidationError, PatientNotFoundError)
 
 
 def parse_sample_date(date_str: str) -> datetime:
@@ -192,8 +200,8 @@ def save_lab_report_to_database(
         int: Number of records saved.
     
     Raises:
-        ValueError: If patient is not found in database.
-        Exception: For database errors.
+        PatientNotFoundError: If patient is not found in database.
+        DatabaseError: For database errors.
     """
     # Extract test results as list of dictionaries
     test_results = convert_test_results_to_dicts(lab_report_obj.results)
@@ -201,9 +209,20 @@ def save_lab_report_to_database(
     # Use provided patient name or fallback to extracted one
     final_patient_name = patient_name or lab_report_obj.patient_info.patient_name
     
-    # Get service instance and save all records atomically
-    service = health_service or HealthService()
-    records_saved = service.save_lab_report_records(
+    # Get service instance via DI pattern
+    # Note: In Celery tasks, we can't use FastAPI's Depends(), so we
+    # manually construct the service with injected dependencies
+    if health_service is None:
+        patient_repo = get_patient_repository()
+        record_repo = get_health_record_repository()
+        health_service = HealthService(
+            patient_repository=patient_repo,
+            health_record_repository=record_repo
+        )
+    
+    # Save all records atomically
+    # This now raises PatientNotFoundError instead of ValueError
+    records_saved = health_service.save_lab_report_records(
         patient_name=final_patient_name,
         timestamp=sample_timestamp,
         lab_name=lab_report_obj.hospital_info.hospital_name,

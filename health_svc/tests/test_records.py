@@ -31,7 +31,7 @@ def test_create_record_success(client):
 
 
 def test_create_record_patient_not_found(client):
-    """Test creating a record for non-existent patient returns 400."""
+    """Test creating a record for non-existent patient returns 404."""
     record_data = {
         "timestamp": "2025-01-01T10:00:00",
         "patient": "Non-existent Patient",
@@ -39,7 +39,8 @@ def test_create_record_patient_not_found(client):
         "value": "120/80"
     }
     response = client.post("/api/v1/records", json=record_data)
-    assert response.status_code == 400
+    # PatientNotFoundError now returns 404 instead of 400
+    assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
 
 
