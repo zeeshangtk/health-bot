@@ -31,6 +31,13 @@ class Settings(BaseSettings):
         default="http://localhost:8000",
         description="URL of the Health Service API"
     )
+    
+    # Health Service API Key (Required for authenticated API access)
+    health_svc_api_key: str = Field(
+        ...,  # Required - no default means fail fast if missing
+        description="API key for authenticating with the Health Service API",
+        min_length=32,  # Enforce minimum key length for security
+    )
 
 
 # Supported Record Types
@@ -49,6 +56,7 @@ settings = Settings()
 # Backwards-compatible exports for existing code
 TELEGRAM_TOKEN = settings.telegram_token
 HEALTH_SVC_API_URL = settings.health_svc_api_url
+HEALTH_SVC_API_KEY = settings.health_svc_api_key
 
 
 def load_env() -> bool:

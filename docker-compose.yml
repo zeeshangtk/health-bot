@@ -46,6 +46,8 @@ services:
       - PAPERLESS_NGX_TIMEOUT=${PAPERLESS_NGX_TIMEOUT:-30}
       - PAPERLESS_NGX_VERIFY_SSL=${PAPERLESS_NGX_VERIFY_SSL:-true}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # API Authentication (MUST be set in .env file)
+      - HEALTH_SVC_API_KEY=${HEALTH_SVC_API_KEY}
     volumes:
       - health_svc_data:/app/data
       - health_svc_uploads:/app/uploads
@@ -79,6 +81,8 @@ services:
       - PAPERLESS_NGX_TIMEOUT=${PAPERLESS_NGX_TIMEOUT:-30}
       - PAPERLESS_NGX_VERIFY_SSL=${PAPERLESS_NGX_VERIFY_SSL:-true}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # API Authentication (same key as health_svc)
+      - HEALTH_SVC_API_KEY=${HEALTH_SVC_API_KEY}
     volumes:
       - health_svc_data:/app/data
       - health_svc_uploads:/app/uploads
@@ -105,6 +109,8 @@ services:
     environment:
       - HEALTH_SVC_REDIS_URL=redis://redis:6379
       - HEALTH_SVC_REDIS_DB=0
+      # API Authentication (required for Flower to load Celery app)
+      - HEALTH_SVC_API_KEY=${HEALTH_SVC_API_KEY}
     depends_on:
       - redis
       - celery_worker
@@ -126,6 +132,8 @@ services:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       # Health Service API URL (internal Docker network)
       - HEALTH_SVC_API_URL=http://health_svc:8000
+      # Health Service API Key (same key as health_svc, MUST be set in .env file)
+      - HEALTH_SVC_API_KEY=${HEALTH_SVC_API_KEY}
     depends_on:
       health_svc:
         condition: service_healthy

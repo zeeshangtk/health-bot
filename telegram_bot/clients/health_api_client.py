@@ -7,21 +7,33 @@ import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
-from config import HEALTH_SVC_API_URL
+from config import HEALTH_SVC_API_URL, HEALTH_SVC_API_KEY
 
 logger = logging.getLogger(__name__)
+
+# Header name for API key authentication (must match health_svc/core/auth.py)
+API_KEY_HEADER_NAME = "X-API-Key"
 
 
 class HealthAPIClient:
     """Client for Health Service REST API."""
     
-    def __init__(self, base_url: Optional[str] = None):
+    def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None):
         self.base_url = base_url or HEALTH_SVC_API_URL
         if not self.base_url:
             raise ValueError("HEALTH_SVC_API_URL must be set in config")
         
+        self.api_key = api_key or HEALTH_SVC_API_KEY
+        if not self.api_key:
+            raise ValueError("HEALTH_SVC_API_KEY must be set in config")
+        
         # Remove trailing slash
         self.base_url = self.base_url.rstrip("/")
+        
+        # Default headers with API key authentication
+        self._default_headers = {
+            API_KEY_HEADER_NAME: self.api_key,
+        }
     
     async def _request(
         self,
@@ -32,15 +44,20 @@ class HealthAPIClient:
         """
         Make HTTP request to API.
         
+        Automatically includes API key authentication header.
+        
         Raises:
             httpx.HTTPStatusError: For HTTP error responses
             httpx.RequestError: For connection/request errors
         """
         url = f"{self.base_url}{endpoint}"
         
+        # Merge default headers with any provided headers
+        headers = {**self._default_headers, **kwargs.pop("headers", {})}
+        
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.request(method, url, **kwargs)
+                response = await client.request(method, url, headers=headers, **kwargs)
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as e:
@@ -194,7 +211,12 @@ class HealthAPIClient:
         
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:  # Longer timeout for file uploads
-                response = await client.post(url, files=files, data=data)
+                response = await client.post(
+                    url,
+                    files=files,
+                    data=data,
+                    headers=self._default_headers,
+                )
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as e:
@@ -225,7 +247,11 @@ class HealthAPIClient:
         
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(url, params=params)
+                response = await client.get(
+                    url,
+                    params=params,
+                    headers=self._default_headers,
+                )
                 response.raise_for_status()
                 return response.text
         except httpx.HTTPStatusError as e:

@@ -2,12 +2,18 @@
 Unit tests for health_api_client.
 Tests that the HTTP client correctly interacts with the Health Service API.
 """
+import os
 import pytest
 from unittest.mock import AsyncMock, patch, Mock
 from datetime import datetime
 import httpx
 
-from clients.health_api_client import HealthAPIClient, get_health_api_client
+# Set test environment variables before importing client
+TEST_API_KEY = "test-api-key-for-testing-purposes-12345678"
+os.environ.setdefault("TELEGRAM_TOKEN", "test-telegram-token")
+os.environ.setdefault("HEALTH_SVC_API_KEY", TEST_API_KEY)
+
+from clients.health_api_client import HealthAPIClient, get_health_api_client, API_KEY_HEADER_NAME
 
 
 # Sample test data
@@ -30,8 +36,8 @@ TEST_RECORD = {
 
 @pytest.fixture
 def mock_client():
-    """Create a HealthAPIClient with a test base URL."""
-    return HealthAPIClient(base_url="http://test-server")
+    """Create a HealthAPIClient with a test base URL and API key."""
+    return HealthAPIClient(base_url="http://test-server", api_key=TEST_API_KEY)
 
 
 @pytest.mark.asyncio
@@ -231,13 +237,13 @@ def test_get_health_api_client_singleton():
 
 def test_health_api_client_init_with_base_url():
     """Test HealthAPIClient initialization with custom base URL."""
-    client = HealthAPIClient(base_url="http://custom-server:8080")
+    client = HealthAPIClient(base_url="http://custom-server:8080", api_key=TEST_API_KEY)
     assert client.base_url == "http://custom-server:8080"
 
 
 def test_health_api_client_init_removes_trailing_slash():
     """Test that HealthAPIClient removes trailing slash from base URL."""
-    client = HealthAPIClient(base_url="http://test-server/")
+    client = HealthAPIClient(base_url="http://test-server/", api_key=TEST_API_KEY)
     assert client.base_url == "http://test-server"
 
 
@@ -245,4 +251,18 @@ def test_health_api_client_init_requires_url():
     """Test that HealthAPIClient raises error if no URL provided."""
     with patch("clients.health_api_client.HEALTH_SVC_API_URL", None):
         with pytest.raises(ValueError, match="HEALTH_SVC_API_URL"):
-            HealthAPIClient()
+            HealthAPIClient(api_key=TEST_API_KEY)
+
+
+def test_health_api_client_init_requires_api_key():
+    """Test that HealthAPIClient raises error if no API key provided."""
+    with patch("clients.health_api_client.HEALTH_SVC_API_KEY", None):
+        with pytest.raises(ValueError, match="HEALTH_SVC_API_KEY"):
+            HealthAPIClient(base_url="http://test-server")
+
+
+def test_health_api_client_has_auth_header():
+    """Test that HealthAPIClient includes API key in default headers."""
+    client = HealthAPIClient(base_url="http://test-server", api_key=TEST_API_KEY)
+    assert API_KEY_HEADER_NAME in client._default_headers
+    assert client._default_headers[API_KEY_HEADER_NAME] == TEST_API_KEY

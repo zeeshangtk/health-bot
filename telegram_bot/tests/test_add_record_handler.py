@@ -2,11 +2,16 @@
 Unit tests for add_record handler flow.
 Tests that the handler correctly saves records via the Health Service API.
 """
+import os
 import pytest
 from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch
 from telegram import Update, Message, User, Chat
 from telegram.ext import ContextTypes
+
+# Set test environment variables before importing modules
+os.environ.setdefault("TELEGRAM_TOKEN", "test-telegram-token")
+os.environ.setdefault("HEALTH_SVC_API_KEY", "test-api-key-for-testing-purposes-12345678")
 
 from handlers.add_record import value_received, ENTERING_VALUE
 from clients.health_api_client import HealthAPIClient

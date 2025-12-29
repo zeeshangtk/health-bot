@@ -2,16 +2,21 @@
 Patients router - patient management endpoints.
 """
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 
 from schemas import PatientCreate, PatientResponse
 from services import PatientService
+from core.auth import verify_api_key
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/patients", tags=["Patients"])
+router = APIRouter(
+    prefix="/api/v1/patients",
+    tags=["Patients"],
+    dependencies=[Depends(verify_api_key)],  # Require API key for all endpoints
+)
 
 # Initialize service
 patient_service = PatientService()

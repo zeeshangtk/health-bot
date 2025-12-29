@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     # Google Gemini API Configuration (Required for document parsing)
     gemini_api_key: str = Field(default="", description="Google Gemini API key")
     
+    # API Authentication Configuration
+    health_svc_api_key: str = Field(
+        ...,  # Required - no default means fail fast if missing
+        description="API key for authenticating requests to the Health Service API",
+        min_length=32,  # Enforce minimum key length for security
+    )
+    
     @property
     def database_path(self) -> str:
         """Get the full database path."""
@@ -112,4 +119,6 @@ PAPERLESS_NGX_TIMEOUT = settings.paperless_ngx_timeout
 PAPERLESS_NGX_VERIFY_SSL = settings.paperless_ngx_verify_ssl
 
 GEMINI_API_KEY = settings.gemini_api_key
+
+API_KEY = settings.health_svc_api_key
 

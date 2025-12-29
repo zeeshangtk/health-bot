@@ -7,6 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
 
+# Set test API key before importing config modules
+# This must happen before any config imports
+TEST_API_KEY = "test-api-key-for-testing-purposes-12345678"
+os.environ.setdefault("HEALTH_SVC_API_KEY", TEST_API_KEY)
+
 from repositories.base import Database
 from repositories import PatientRepository, HealthRecordRepository
 from services.health_service import HealthService

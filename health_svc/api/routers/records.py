@@ -2,7 +2,7 @@
 Records router - health record and image upload endpoints.
 """
 import logging
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Response, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Response, Form
 from typing import Optional, List
 
 from schemas import (
@@ -12,11 +12,16 @@ from schemas import (
 )
 from services import HealthService, UploadService
 from services.graph import GraphService
+from core.auth import verify_api_key
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/records", tags=["Health Records"])
+router = APIRouter(
+    prefix="/api/v1/records",
+    tags=["Health Records"],
+    dependencies=[Depends(verify_api_key)],  # Require API key for all endpoints
+)
 
 # Initialize services
 health_service = HealthService()

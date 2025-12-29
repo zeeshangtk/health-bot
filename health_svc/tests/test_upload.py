@@ -12,10 +12,39 @@ from fastapi.testclient import TestClient
 from fastapi import FastAPI, UploadFile, File
 from fastapi import APIRouter, HTTPException, status
 
+# Set test API key before importing modules that use config
+os.environ.setdefault("HEALTH_SVC_API_KEY", "test-api-key-for-testing-purposes-12345678")
+
 from schemas import ImageUploadResponse
 from core.config import UPLOAD_DIR, UPLOAD_MAX_SIZE
-from tasks.upload_tasks import process_uploaded_file
 from services.upload_service import UploadService
+
+
+def create_mock_celery_task(task_id="test-task-id"):
+    """Create a mock celery task for testing.
+    
+    Returns a mock task object that has a .delay() method returning
+    a result with the specified task_id.
+    """
+    mock_task_result = MagicMock()
+    mock_task_result.id = task_id
+    
+    mock_task = MagicMock()
+    mock_task.delay = MagicMock(return_value=mock_task_result)
+    return mock_task
+
+
+def create_mock_celery_task_with_side_effect(task_ids):
+    """Create a mock celery task that returns different IDs for successive calls."""
+    mock_results = []
+    for task_id in task_ids:
+        result = MagicMock()
+        result.id = task_id
+        mock_results.append(result)
+    
+    mock_task = MagicMock()
+    mock_task.delay = MagicMock(side_effect=mock_results)
+    return mock_task
 
 
 @pytest.fixture
@@ -34,7 +63,7 @@ def temp_upload_dir():
 
 
 @pytest.fixture
-def test_app(temp_upload_dir):
+def upload_test_app(temp_upload_dir):
     """Create a FastAPI test app with upload endpoint."""
     tmpdir, test_upload_service = temp_upload_dir
     
@@ -67,9 +96,9 @@ def test_app(temp_upload_dir):
 
 
 @pytest.fixture
-def client(test_app):
-    """Create a test client for the API."""
-    return TestClient(test_app)
+def client(upload_test_app):
+    """Create a test client for the upload API."""
+    return TestClient(upload_test_app)
 
 
 def create_test_image(format: str = "jpeg", size: int = 1024) -> BytesIO:
@@ -109,11 +138,13 @@ def test_upload_image_success_jpeg(client, temp_upload_dir):
     image_data = create_test_image("jpeg", 1024)
     image_data.seek(0)
     
-    # Mock Celery task
+    # Mock Celery task - the task object needs a delay method that returns a result with id
+    mock_task_result = MagicMock()
+    mock_task_result.id = "test-task-id-123"
     mock_task = MagicMock()
-    mock_task.id = "test-task-id-123"
+    mock_task.delay = MagicMock(return_value=mock_task_result)
     
-    with patch('services.upload_service.process_uploaded_file.delay', return_value=mock_task):
+    with patch('services.upload_service.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.jpg", image_data, "image/jpeg")}
@@ -140,10 +171,12 @@ def test_upload_image_success_png(client, temp_upload_dir):
     image_data.seek(0)
     
     # Mock Celery task
+    mock_task_result = MagicMock()
+    mock_task_result.id = "test-task-id-456"
     mock_task = MagicMock()
-    mock_task.id = "test-task-id-456"
+    mock_task.delay = MagicMock(return_value=mock_task_result)
     
-    with patch('services.upload_service.process_uploaded_file.delay', return_value=mock_task):
+    with patch('services.upload_service.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.png", image_data, "image/png")}
@@ -162,10 +195,9 @@ def test_upload_image_success_gif(client, temp_upload_dir):
     image_data.seek(0)
     
     # Mock Celery task
-    mock_task = MagicMock()
-    mock_task.id = "test-task-id-gif"
+    mock_task = create_mock_celery_task("test-task-id-gif")
     
-    with patch('services.upload_service.process_uploaded_file.delay', return_value=mock_task):
+    with patch('services.upload_service.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.gif", image_data, "image/gif")}
@@ -184,10 +216,9 @@ def test_upload_image_success_bmp(client, temp_upload_dir):
     image_data.seek(0)
     
     # Mock Celery task
-    mock_task = MagicMock()
-    mock_task.id = "test-task-id-bmp"
+    mock_task = create_mock_celery_task("test-task-id-bmp")
     
-    with patch('services.upload_service.process_uploaded_file.delay', return_value=mock_task):
+    with patch('services.upload_service.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.bmp", image_data, "image/bmp")}
@@ -208,13 +239,10 @@ def test_upload_image_unique_filenames(client, temp_upload_dir):
     image_data2 = create_test_image("jpeg", 1024)
     image_data2.seek(0)
     
-    # Mock Celery task
-    mock_task1 = MagicMock()
-    mock_task1.id = "task-1"
-    mock_task2 = MagicMock()
-    mock_task2.id = "task-2"
+    # Mock Celery task with multiple returns
+    mock_task = create_mock_celery_task_with_side_effect(["task-1", "task-2"])
     
-    with patch('services.upload_service.process_uploaded_file.delay', side_effect=[mock_task1, mock_task2]):
+    with patch('services.upload_service.process_uploaded_file', mock_task):
         response1 = client.post(
             "/api/v1/records/upload",
             files={"file": ("test1.jpg", image_data1, "image/jpeg")}
@@ -343,10 +371,9 @@ def test_upload_file_at_max_size(client, temp_upload_dir):
     max_size_data.seek(0)
     
     # Mock Celery task
-    mock_task = MagicMock()
-    mock_task.id = "test-task-id-max"
+    mock_task = create_mock_celery_task("test-task-id-max")
     
-    with patch('services.upload_service.process_uploaded_file.delay', return_value=mock_task):
+    with patch('services.upload_service.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("max.jpg", max_size_data, "image/jpeg")}
@@ -378,10 +405,9 @@ def test_upload_jpeg_with_jpeg_extension(client, temp_upload_dir):
     image_data.seek(0)
     
     # Mock Celery task
-    mock_task = MagicMock()
-    mock_task.id = "test-task-id-jpeg-ext"
+    mock_task = create_mock_celery_task("test-task-id-jpeg-ext")
     
-    with patch('services.upload_service.process_uploaded_file.delay', return_value=mock_task):
+    with patch('services.upload_service.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.jpeg", image_data, "image/jpeg")}
@@ -398,11 +424,11 @@ def test_upload_integration_full_workflow(client, temp_upload_dir):
     """Test complete upload workflow including file storage and cleanup."""
     tmpdir, _ = temp_upload_dir
     # Mock Celery tasks
-    mock_tasks = [MagicMock(id=f"task-{i}") for i in range(3)]
+    mock_task = create_mock_celery_task_with_side_effect([f"task-{i}" for i in range(3)])
     
     # Upload multiple files
     files_uploaded = []
-    with patch('services.upload_service.process_uploaded_file.delay', side_effect=mock_tasks):
+    with patch('services.upload_service.process_uploaded_file', mock_task):
         for i, format in enumerate(["jpeg", "png", "gif"]):
             image_data = create_test_image(format, 1024)
             image_data.seek(0)
@@ -436,10 +462,9 @@ def test_upload_response_schema(client, temp_upload_dir):
     image_data.seek(0)
     
     # Mock Celery task
-    mock_task = MagicMock()
-    mock_task.id = "test-task-id-schema"
+    mock_task = create_mock_celery_task("test-task-id-schema")
     
-    with patch('services.upload_service.process_uploaded_file.delay', return_value=mock_task):
+    with patch('services.upload_service.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.jpg", image_data, "image/jpeg")}
@@ -465,8 +490,7 @@ def test_upload_concurrent_uploads(client, temp_upload_dir):
     import concurrent.futures
     
     # Mock Celery task
-    task_ids = [f"task-{i}" for i in range(5)]
-    mock_tasks = [MagicMock(id=tid) for tid in task_ids]
+    mock_task = create_mock_celery_task_with_side_effect([f"task-{i}" for i in range(5)])
     
     def upload_one():
         image_data = create_test_image("jpeg", 1024)
@@ -478,7 +502,7 @@ def test_upload_concurrent_uploads(client, temp_upload_dir):
         return response.status_code == 201
     
     # Upload 5 files concurrently
-    with patch('services.upload_service.process_uploaded_file.delay', side_effect=mock_tasks):
+    with patch('services.upload_service.process_uploaded_file', mock_task):
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(upload_one) for _ in range(5)]
             results = [f.result() for f in concurrent.futures.as_completed(futures)]
@@ -503,10 +527,9 @@ def test_upload_task_queued_with_correct_parameters(client, temp_upload_dir):
     image_data.seek(0)
     
     # Mock Celery task
-    mock_task = MagicMock()
-    mock_task.id = "test-task-params"
+    mock_task = create_mock_celery_task("test-task-params")
     
-    with patch('services.upload_service.process_uploaded_file.delay', return_value=mock_task) as mock_delay:
+    with patch('services.upload_service.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.jpg", image_data, "image/jpeg")}
@@ -515,11 +538,11 @@ def test_upload_task_queued_with_correct_parameters(client, temp_upload_dir):
     assert response.status_code == 201
     data = response.json()
     
-    # Verify task was called
-    assert mock_delay.called
+    # Verify task.delay was called
+    assert mock_task.delay.called
     
     # Verify task was called with correct parameters
-    call_args = mock_delay.call_args
+    call_args = mock_task.delay.call_args
     assert call_args is not None
     
     # Check keyword arguments
@@ -543,8 +566,11 @@ def test_upload_task_queuing_failure_does_not_fail_upload(client, temp_upload_di
     image_data = create_test_image("jpeg", 1024)
     image_data.seek(0)
     
-    # Mock Celery task to raise an exception
-    with patch('services.upload_service.process_uploaded_file.delay', side_effect=Exception("Redis connection failed")):
+    # Mock Celery task with delay that raises an exception
+    mock_task = MagicMock()
+    mock_task.delay = MagicMock(side_effect=Exception("Redis connection failed"))
+    
+    with patch('services.upload_service.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.jpg", image_data, "image/jpeg")}
@@ -572,10 +598,9 @@ def test_upload_task_id_in_response_when_queued(client, temp_upload_dir):
     image_data.seek(0)
     
     # Mock Celery task
-    mock_task = MagicMock()
-    mock_task.id = "abc123-task-id"
+    mock_task = create_mock_celery_task("abc123-task-id")
     
-    with patch('services.upload_service.process_uploaded_file.delay', return_value=mock_task):
+    with patch('services.upload_service.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.jpg", image_data, "image/jpeg")}
