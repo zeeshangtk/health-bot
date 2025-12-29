@@ -66,6 +66,11 @@ from core.logging_config import setup_logging
 from core.middleware import LoggingMiddleware
 from api.routers import health_router, patients_router, records_router, meta_router
 
+# Import celery_app to register it globally before any tasks are used
+# This ensures @shared_task decorated functions use our Redis broker config
+# instead of Celery's default AMQP/RabbitMQ broker
+from celery_app import celery_app  # noqa: F401
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
