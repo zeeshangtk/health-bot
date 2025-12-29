@@ -1,12 +1,14 @@
 """
 Add patient handler.
 Handles /add_patient command to dynamically add new patients.
+Rate limited to prevent abuse.
 """
 import logging
 from telegram import Update
 from telegram.ext import CommandHandler, MessageHandler, ContextTypes, filters, ConversationHandler
 
 from clients.health_api_client import get_health_api_client
+from utils.rate_limiter import rate_limit_commands
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +16,12 @@ logger = logging.getLogger(__name__)
 WAITING_FOR_NAME = 1
 
 
+@rate_limit_commands
 async def add_patient_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
     Entry point for /add_patient command.
     Asks user for patient's full name.
+    Rate limited to prevent abuse.
     """
     await update.message.reply_text(
         "👤 **Add New Patient**\n\n"

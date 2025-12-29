@@ -59,8 +59,9 @@ class HealthService:
             if patient_id is None:
                 return {"success": False, "message": f"Patient '{patient}' not found in database"}
             
-            # Save the record
-            self._record_repo.save(
+            # Save the record and get the created record in a single transaction,
+            # avoiding race conditions when returning newly created records
+            _, record_dict = self._record_repo.save(
                 timestamp=timestamp,
                 patient_id=patient_id,
                 record_type=record_type,
@@ -69,26 +70,17 @@ class HealthService:
                 lab_name=lab_name
             )
             
-            # Fetch the saved record to return full details
-            records = self._record_repo.get_all(patient_name=patient, limit=1)
-            if records:
-                record = records[0]
-                return {
-                    "success": True,
-                    "record": HealthRecordResponse(
-                        timestamp=record.timestamp.isoformat(),
-                        patient=record.patient,
-                        record_type=record.record_type,
-                        value=record.value,
-                        unit=record.unit,
-                        lab_name=record.lab_name
-                    )
-                }
-            else:
-                return {
-                    "success": False,
-                    "message": "Record saved but could not be retrieved"
-                }
+            return {
+                "success": True,
+                "record": HealthRecordResponse(
+                    timestamp=record_dict["timestamp"],
+                    patient=record_dict["patient"],
+                    record_type=record_dict["record_type"],
+                    value=record_dict["value"],
+                    unit=record_dict["unit"],
+                    lab_name=record_dict["lab_name"]
+                )
+            }
         except ValueError as e:
             return {"success": False, "message": str(e)}
         except Exception as e:

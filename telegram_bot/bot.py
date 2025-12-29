@@ -1,6 +1,11 @@
 """
 Health Bot - Main entry point
 Uses python-telegram-bot v20.x API
+
+Features:
+- Rate limiting to prevent abuse
+- Conversation handlers for multi-step flows
+- Error handling with user-friendly messages
 """
 
 import logging
@@ -16,6 +21,7 @@ from handlers.view_records_graph import get_view_records_graph_conversation_hand
 from handlers.export import get_export_conversation_handler
 from handlers.upload_record import get_upload_record_conversation_handler
 from handlers.unknown_command import get_unknown_command_handler, get_help_callback_handler
+from utils.rate_limiter import rate_limit_commands
 
 
 # Configure logging
@@ -26,10 +32,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+@rate_limit_commands
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handler for /start command.
     Provides a friendly welcome message.
+    Rate limited to prevent abuse.
     """
     user = update.effective_user
     welcome_message = (
@@ -45,10 +53,12 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     # TODO: Add initial onboarding flow here
 
 
+@rate_limit_commands
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handler for /cancel command.
     Cancels any ongoing operation and returns to main menu.
+    Rate limited to prevent abuse.
     """
     # Clear any stored conversation data
     context.user_data.clear()

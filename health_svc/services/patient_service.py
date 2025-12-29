@@ -33,27 +33,19 @@ class PatientService:
             Dict with 'success' bool and either 'patient' (PatientResponse) 
             or 'message' (error message).
         """
-        success = self._repo.add(name)
+        # Repository now returns the created patient dict in a single transaction,
+        # avoiding race conditions when returning newly created records
+        created_patient = self._repo.add(name)
         
-        if success:
-            # Fetch the created patient
-            patients = self._repo.get_all()
-            created_patient = next((p for p in patients if p["name"] == name), None)
-            
-            if created_patient:
-                return {
-                    "success": True,
-                    "patient": PatientResponse(
-                        id=created_patient["id"],
-                        name=created_patient["name"],
-                        created_at=created_patient["created_at"]
-                    )
-                }
-            else:
-                return {
-                    "success": False,
-                    "message": "Patient created but could not be retrieved"
-                }
+        if created_patient:
+            return {
+                "success": True,
+                "patient": PatientResponse(
+                    id=created_patient["id"],
+                    name=created_patient["name"],
+                    created_at=created_patient["created_at"]
+                )
+            }
         else:
             return {
                 "success": False,

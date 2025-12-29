@@ -2,10 +2,11 @@
 Repository for health record database operations.
 
 This module contains all database access for health record-related operations.
+Uses single-transaction patterns to avoid race conditions when returning created records.
 """
 import logging
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 from repositories.base import Database, get_database
 from models.health_record import HealthRecord
@@ -33,9 +34,12 @@ class HealthRecordRepository:
         value: str,
         unit: Optional[str] = None,
         lab_name: Optional[str] = "self"
-    ) -> int:
+    ) -> Tuple[int, Dict[str, Any]]:
         """
-        Save a health record to the database.
+        Save a health record to the database and return the complete record.
+        
+        Uses a single transaction to insert and retrieve the record,
+        avoiding race conditions that could occur if we queried separately.
         
         Args:
             timestamp: When the record was created.
@@ -46,29 +50,54 @@ class HealthRecordRepository:
             lab_name: Name of the lab (optional, defaults to "self").
         
         Returns:
-            int: The ID of the inserted record.
+            Tuple[int, Dict[str, Any]]: A tuple of (record_id, record_dict) where
+                record_dict contains the complete record with patient name resolved.
         """
         conn = self._db.get_connection()
         cursor = conn.cursor()
         
-        cursor.execute("""
-            INSERT INTO health_records 
-            (timestamp, patient_id, record_type, value, unit, lab_name)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            timestamp.isoformat(),
-            patient_id,
-            record_type,
-            value,
-            unit,
-            lab_name
-        ))
-        
-        record_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        
-        return record_id
+        try:
+            cursor.execute("""
+                INSERT INTO health_records 
+                (timestamp, patient_id, record_type, value, unit, lab_name)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                timestamp.isoformat(),
+                patient_id,
+                record_type,
+                value,
+                unit,
+                lab_name
+            ))
+            
+            record_id = cursor.lastrowid
+            
+            # Fetch the complete record with patient name within the same transaction
+            cursor.execute("""
+                SELECT hr.id, hr.timestamp, p.name, hr.record_type, hr.value, 
+                       hr.unit, hr.lab_name, hr.created_at
+                FROM health_records hr
+                INNER JOIN patients p ON hr.patient_id = p.id
+                WHERE hr.id = ?
+            """, (record_id,))
+            row = cursor.fetchone()
+            
+            conn.commit()
+            
+            record_dict = {
+                "id": row[0],
+                "timestamp": row[1],
+                "patient": row[2],
+                "record_type": row[3],
+                "value": row[4],
+                "unit": row[5],
+                "lab_name": row[6] if row[6] is not None else "self",
+                "created_at": row[7]
+            }
+            
+            return record_id, record_dict
+        finally:
+            conn.close()
     
     def get_all(
         self,

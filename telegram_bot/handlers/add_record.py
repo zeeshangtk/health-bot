@@ -1,6 +1,7 @@
 """
 Add record conversation handler.
 Multi-step flow for recording health measurements.
+Rate limited to prevent abuse.
 """
 import logging
 from datetime import datetime
@@ -16,6 +17,7 @@ from telegram.ext import (
 
 from config import SUPPORTED_RECORD_TYPES
 from clients.health_api_client import get_health_api_client
+from utils.rate_limiter import rate_limit_commands
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +25,12 @@ logger = logging.getLogger(__name__)
 SELECTING_PATIENT, SELECTING_RECORD_TYPE, ENTERING_VALUE = range(3)
 
 
+@rate_limit_commands
 async def add_record_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
     Entry point for /add_record command.
     Step A: Present patient list as inline buttons.
+    Rate limited to prevent abuse.
     """
     # Get patients from API
     client = get_health_api_client()

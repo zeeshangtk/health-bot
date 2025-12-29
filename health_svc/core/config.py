@@ -2,11 +2,15 @@
 Configuration module for Health Service API service.
 Uses Pydantic BaseSettings for validation - app fails fast if required config is missing.
 """
+import sys
+import logging
 from pathlib import Path
 from typing import List
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -24,6 +28,7 @@ class Settings(BaseSettings):
     # Database Configuration
     health_svc_db_dir: str = Field(default="data", description="Database directory")
     health_svc_db_file: str = Field(default="health_bot.db", description="Database filename")
+    health_svc_db_busy_timeout: int = Field(default=5000, description="SQLite busy timeout in milliseconds")
     
     # API Configuration
     health_svc_host: str = Field(default="0.0.0.0", description="API host")
@@ -58,6 +63,35 @@ class Settings(BaseSettings):
         description="API key for authenticating requests to the Health Service API",
         min_length=32,  # Enforce minimum key length for security
     )
+    
+    @model_validator(mode="after")
+    def validate_secrets(self) -> "Settings":
+        """
+        Validate required secrets at startup and fail fast with clear error messages.
+        This ensures all required configuration is present before the app starts.
+        """
+        errors = []
+        
+        # Check Gemini API key if upload features are expected to work
+        if not self.gemini_api_key:
+            logger.warning(
+                "GEMINI_API_KEY not set - document upload/parsing features will be disabled"
+            )
+        
+        # Check Paperless NGX token if URL is configured
+        if self.paperless_ngx_url and self.paperless_ngx_url != "http://localhost:8000":
+            if not self.paperless_ngx_api_token:
+                logger.warning(
+                    "PAPERLESS_NGX_URL is configured but PAPERLESS_NGX_API_TOKEN is not set - "
+                    "Paperless NGX integration will not work"
+                )
+        
+        if errors:
+            error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+            logger.critical(error_msg)
+            sys.exit(1)
+        
+        return self
     
     @property
     def database_path(self) -> str:
@@ -95,6 +129,7 @@ settings.ensure_directories()
 DATABASE_DIR = settings.health_svc_db_dir
 DATABASE_FILE = settings.health_svc_db_file
 DATABASE_PATH = settings.database_path
+DATABASE_BUSY_TIMEOUT = settings.health_svc_db_busy_timeout
 
 API_HOST = settings.health_svc_host
 API_PORT = settings.health_svc_port

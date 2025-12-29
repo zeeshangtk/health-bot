@@ -1,6 +1,7 @@
 """
 View records graph handler.
 Displays an HTML graph visualization of a patient's health records.
+Rate limited to prevent API abuse.
 """
 import logging
 from io import BytesIO
@@ -13,6 +14,7 @@ from telegram.ext import (
 )
 
 from clients.health_api_client import get_health_api_client
+from utils.rate_limiter import rate_limit_api_calls
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +22,12 @@ logger = logging.getLogger(__name__)
 SELECTING_PATIENT = range(1)
 
 
+@rate_limit_api_calls
 async def view_records_graph_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
     Entry point for /view_records_graph command.
     Step 1: Present patient list as inline buttons.
+    Rate limited to prevent API abuse.
     """
     client = get_health_api_client()
     

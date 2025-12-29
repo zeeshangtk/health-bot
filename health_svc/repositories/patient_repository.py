@@ -24,15 +24,19 @@ class PatientRepository:
         """
         self._db = db or get_database()
     
-    def add(self, name: str) -> bool:
+    def add(self, name: str) -> Optional[Dict[str, Any]]:
         """
-        Add a new patient to the database.
+        Add a new patient to the database and return the created record.
+        
+        Uses a single transaction to insert and retrieve the record,
+        avoiding race conditions that could occur if we queried separately.
         
         Args:
             name: Full name of the patient.
         
         Returns:
-            bool: True if patient was added successfully, False if patient already exists.
+            Optional[Dict[str, Any]]: The created patient dict with id, name, and created_at,
+                or None if patient already exists (UNIQUE constraint violation).
         """
         conn = self._db.get_connection()
         cursor = conn.cursor()
@@ -43,11 +47,29 @@ class PatientRepository:
                 VALUES (?)
             """, (name,))
             
+            # Get the inserted row using lastrowid within the same transaction
+            # This is safe because we're in the same connection/transaction
+            patient_id = cursor.lastrowid
+            
+            # Fetch the complete record to get the created_at timestamp
+            cursor.execute(
+                "SELECT id, name, created_at FROM patients WHERE id = ?",
+                (patient_id,)
+            )
+            row = cursor.fetchone()
+            
             conn.commit()
-            return True
+            
+            if row:
+                return {
+                    "id": row[0],
+                    "name": row[1],
+                    "created_at": row[2]
+                }
+            return None
         except sqlite3.IntegrityError:
             # Patient name already exists (UNIQUE constraint)
-            return False
+            return None
         finally:
             conn.close()
     

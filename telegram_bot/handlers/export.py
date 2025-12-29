@@ -1,6 +1,7 @@
 """
 Export handler.
 Allows exporting health records as CSV or JSON files.
+Rate limited with stricter limits for file operations.
 """
 import csv
 import json
@@ -19,6 +20,7 @@ from telegram.ext import (
 
 from config import SUPPORTED_RECORD_TYPES
 from clients.health_api_client import get_health_api_client
+from utils.rate_limiter import rate_limit_uploads
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +28,12 @@ logger = logging.getLogger(__name__)
 SELECTING_PATIENT, SELECTING_FORMAT = range(2)
 
 
+@rate_limit_uploads
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
     Entry point for /export command.
     Step 1: Present patient list (including "All" option) as inline buttons.
+    Rate limited with stricter limits for file operations.
     """
     client = get_health_api_client()
     

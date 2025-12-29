@@ -1,20 +1,24 @@
 """
 Get patients handler.
 Handles /get_patients command to view all registered patients.
+Rate limited to prevent abuse.
 """
 import logging
 from telegram import Update
 from telegram.ext import CommandHandler, ContextTypes
 
 from clients.health_api_client import get_health_api_client
+from utils.rate_limiter import rate_limit_api_calls
 
 logger = logging.getLogger(__name__)
 
 
+@rate_limit_api_calls
 async def get_patients_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handler for /get_patients command.
     Displays all registered patients from the API.
+    Rate limited to prevent API abuse.
     """
     client = get_health_api_client()
     

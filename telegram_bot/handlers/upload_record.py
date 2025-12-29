@@ -1,6 +1,7 @@
 """
 Upload record conversation handler.
 Multi-step flow for uploading medical lab report images.
+Rate limited with stricter limits for file uploads.
 """
 import logging
 from datetime import datetime
@@ -15,6 +16,7 @@ from telegram.ext import (
 )
 
 from clients.health_api_client import get_health_api_client
+from utils.rate_limiter import rate_limit_uploads
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +28,12 @@ SUPPORTED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp']
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB in bytes
 
 
+@rate_limit_uploads
 async def upload_record_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
     Entry point for /upload_record command.
     Step 1: Present patient list as inline buttons.
+    Rate limited with stricter limits for file uploads.
     """
     # Get patients from API
     client = get_health_api_client()
