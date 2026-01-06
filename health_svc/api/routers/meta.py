@@ -217,3 +217,4 @@ async def get_record_types() -> Dict[str, Any]:
         "categories": list(by_category.keys()),
     }
 
+

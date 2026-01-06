@@ -194,3 +194,4 @@ def format_relative(dt: datetime) -> str:
         weeks = int(seconds / 604800)
         return f"{weeks} week{'s' if weeks != 1 else ''} ago"
 
+

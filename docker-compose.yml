@@ -10,6 +10,12 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    # Resource limits: Redis is memory-efficient but needs predictable allocation
+    # Lower CPU (0.3) prevents Redis from competing with Python workers on ARM
+    # 192M limit is sufficient for small task queues; 64M reservation reduces swap thrashing
+    mem_limit: 192M
+    mem_reservation: 64M
+    cpus: 0.3
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
@@ -26,6 +32,12 @@ services:
     restart: unless-stopped
     ports:
       - "${HEALTH_SVC_PORT:-8000}:8000"
+    # Resource limits: FastAPI needs headroom for request handling and async operations
+    # 384M limit accommodates Python overhead + request buffers + DB connections on ARM
+    # 1.0 CPU ensures responsive API handling without starving other services
+    mem_limit: 384M
+    mem_reservation: 192M
+    cpus: 1.0
     environment:
       # Database configuration
       - HEALTH_SVC_DB_DIR=/app/data
@@ -69,7 +81,15 @@ services:
     image: ${REGISTRY:-ghcr.io}/${GITHUB_REPO_OWNER:-your-username}/health_svc:${HEALTH_SVC_TAG:-latest}
     container_name: health-bot-celery
     restart: unless-stopped
-    command: celery -A celery_app worker --loglevel=info
+    # Resource limits: Celery is highest risk for memory leaks and CPU spikes
+    # 512M limit provides buffer for task processing and prevents OOM kills on ARM
+    # 1.0 CPU ensures tasks complete promptly without blocking other services
+    # --concurrency=1 reduces parallelism to prevent memory bloat (high PIDS in stats)
+    # --max-tasks-per-child=50 recycles workers to prevent memory accumulation
+    mem_limit: 512M
+    mem_reservation: 256M
+    cpus: 1.0
+    command: celery -A celery_app worker --loglevel=info --concurrency=1 --max-tasks-per-child=50
     environment:
       - HEALTH_SVC_DB_DIR=/app/data
       - HEALTH_SVC_DB_FILE=health_bot.db
@@ -105,6 +125,12 @@ services:
     restart: unless-stopped
     ports:
       - "${FLOWER_PORT:-5555}:5555"
+    # Resource limits: Flower is lightweight but can accumulate state over time
+    # 256M limit prevents memory growth from long-running monitoring sessions
+    # 0.5 CPU is sufficient for web UI and periodic polling without competing with workers
+    mem_limit: 256M
+    mem_reservation: 128M
+    cpus: 0.5
     command: celery -A celery_app flower --port=5555
     environment:
       - HEALTH_SVC_REDIS_URL=redis://redis:6379
@@ -127,6 +153,12 @@ services:
     image: ${REGISTRY:-ghcr.io}/${GITHUB_REPO_OWNER:-your-username}/telegram_bot:${TELEGRAM_BOT_TAG:-latest}
     container_name: health-bot-telegram
     restart: unless-stopped
+    # Resource limits: Telegram bot is event-driven and typically idle
+    # 128M limit is minimal but sufficient for Python + telegram library overhead on ARM
+    # 0.25 CPU prevents bot from interfering with critical services during message bursts
+    mem_limit: 128M
+    mem_reservation: 64M
+    cpus: 0.25
     environment:
       # Required: Telegram Bot Token (MUST be set in .env file)
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}

@@ -22,9 +22,13 @@ from tasks.upload_tasks import (
 
 # For testing Celery tasks, we'll call the .run() method directly
 # which properly handles the bound task signature
-def call_process_uploaded_file(task_self, filename, file_path, file_size, content_type, upload_timestamp):
+def call_process_uploaded_file(
+    task_self, filename, file_path, file_size, content_type, upload_timestamp, patient_name=None
+):
     """Helper to call the Celery task function directly for testing."""
-    return process_uploaded_file.run(filename, file_path, file_size, content_type, upload_timestamp)
+    return process_uploaded_file.run(
+        filename, file_path, file_size, content_type, upload_timestamp, patient_name=patient_name
+    )
 
 
 @pytest.fixture
@@ -654,3 +658,137 @@ class TestProcessUploadedFile:
         
         # HealthService should still be called
         mock_health_service.save_lab_report_records.assert_called_once()
+    
+    def test_process_uploaded_file_patient_name_override(
+        self, mock_task, temp_file, mock_health_service
+    ):
+        """Test that provided patient_name overrides the Gemini-extracted name."""
+        file_path, file_size = temp_file
+        filename = Path(file_path).name
+        content_type = "image/jpeg"
+        upload_timestamp = datetime.now(timezone.utc).isoformat()
+        
+        # Lab report with a different patient name from Gemini
+        lab_report = {
+            "hospital_info": {
+                "hospital_name": "Test Hospital",
+                "report_type": "Laboratory Reports"
+            },
+            "patient_info": {
+                "patient_name": "Gemini Extracted Name",  # This should be overridden
+                "patient_id": "PAT12345",
+                "age_sex": "45Y / MALE",
+                "sample_date": "15-12-2024 10:30 AM",
+                "referring_doctor_full_name_titles": "DR. Jane Smith"
+            },
+            "results": [
+                {
+                    "test_name": "Blood Urea",
+                    "results": "40.0",
+                    "unit": "mg/dl",
+                    "reference_range": "10.0-40.0"
+                }
+            ]
+        }
+        
+        mock_gemini_service = MagicMock()
+        mock_gemini_service.extract_lab_report.return_value = lab_report
+        
+        # Mock PaperlessNgxService
+        mock_paperless_service = MagicMock()
+        mock_paperless_service.upload_medical_document_from_dict.return_value = {
+            "status": "success"
+        }
+        
+        override_patient_name = "User Provided Name"
+        
+        with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
+            with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
+                with patch('tasks.upload_tasks.HealthService', return_value=mock_health_service):
+                    with patch('tasks.upload_tasks.logger') as mock_logger:
+                        result = call_process_uploaded_file(
+                            mock_task,
+                            filename,
+                            file_path,
+                            file_size,
+                            content_type,
+                            upload_timestamp,
+                            patient_name=override_patient_name
+                        )
+        
+        # Verify success
+        assert result["status"] == "success"
+        
+        # Verify the lab_report in result has the overridden patient name
+        assert result["lab_report"]["patient_info"]["patient_name"] == override_patient_name
+        
+        # Verify Paperless NGX received the overridden name
+        paperless_call = mock_paperless_service.upload_medical_document_from_dict.call_args
+        medical_info = paperless_call[1]["medical_info"]
+        assert medical_info["patient_info"]["patient_name"] == override_patient_name
+        
+        # Verify HealthService received the overridden name
+        call_kwargs = mock_health_service.save_lab_report_records.call_args[1]
+        assert call_kwargs["patient_name"] == override_patient_name
+        
+        # Verify override was logged
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        override_logged = any("Overriding" in call and "Gemini Extracted Name" in call for call in info_calls)
+        assert override_logged, "Expected log message about patient name override"
+    
+    def test_process_uploaded_file_no_patient_name_override_when_not_provided(
+        self, mock_task, temp_file, mock_health_service
+    ):
+        """Test that Gemini-extracted name is used when no patient_name is provided."""
+        file_path, file_size = temp_file
+        filename = Path(file_path).name
+        content_type = "image/jpeg"
+        upload_timestamp = datetime.now(timezone.utc).isoformat()
+        
+        gemini_patient_name = "Gemini Extracted Name"
+        lab_report = {
+            "hospital_info": {
+                "hospital_name": "Test Hospital",
+                "report_type": "Laboratory Reports"
+            },
+            "patient_info": {
+                "patient_name": gemini_patient_name,
+                "patient_id": "PAT12345",
+                "age_sex": "45Y / MALE",
+                "sample_date": "15-12-2024 10:30 AM",
+                "referring_doctor_full_name_titles": "DR. Jane Smith"
+            },
+            "results": []
+        }
+        
+        mock_gemini_service = MagicMock()
+        mock_gemini_service.extract_lab_report.return_value = lab_report
+        
+        # Mock PaperlessNgxService
+        mock_paperless_service = MagicMock()
+        mock_paperless_service.upload_medical_document_from_dict.return_value = {
+            "status": "success"
+        }
+        
+        with patch('tasks.upload_tasks.GeminiService', return_value=mock_gemini_service):
+            with patch('tasks.upload_tasks.PaperlessNgxService', return_value=mock_paperless_service):
+                with patch('tasks.upload_tasks.HealthService', return_value=mock_health_service):
+                    result = call_process_uploaded_file(
+                        mock_task,
+                        filename,
+                        file_path,
+                        file_size,
+                        content_type,
+                        upload_timestamp,
+                        patient_name=None  # No override
+                    )
+        
+        # Verify success
+        assert result["status"] == "success"
+        
+        # Verify Gemini-extracted name is preserved
+        assert result["lab_report"]["patient_info"]["patient_name"] == gemini_patient_name
+        
+        # Verify HealthService received the Gemini-extracted name
+        call_kwargs = mock_health_service.save_lab_report_records.call_args[1]
+        assert call_kwargs["patient_name"] == gemini_patient_name
