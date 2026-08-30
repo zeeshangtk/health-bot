@@ -6,24 +6,42 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from PIL import Image
 
 from core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Fail fast instead of riding out a client-side retry loop for minutes:
+# a single attempt with a short deadline, since the Celery task layer
+# already handles retries (tasks/upload_tasks.py: MAX_RETRIES).
+REQUEST_TIMEOUT_MS = 30_000
+GENERATE_CONTENT_CONFIG = types.GenerateContentConfig(
+    http_options=types.HttpOptions(
+        timeout=REQUEST_TIMEOUT_MS,
+        retry_options=types.HttpRetryOptions(attempts=1),
+    )
+)
+
 
 class GeminiService:
     """Service for extracting structured data from medical reports using Gemini AI."""
-    
+
+    # Pinned to a concrete lite model rather than the "-latest" alias:
+    # "gemini-flash-latest" silently resolved to "gemini-3.7-flash", a
+    # flagship-tier model with a 20 requests/day free-tier cap. Lite models
+    # get the free tier's most generous daily quota.
+    MODEL_NAME = "gemini-3.5-flash-lite"
+
     def __init__(self, api_key: str | None = None):
         """
         Initialize the Gemini service.
-        
+
         Args:
             api_key: Google Gemini API key. If not provided, loads from settings.
-            
+
         Raises:
             ValueError: If API key is not provided.
         """
@@ -33,13 +51,9 @@ class GeminiService:
                 "GEMINI_API_KEY environment variable is required. "
                 "Set it or pass api_key parameter."
             )
-        
-        # Configure the Gemini client
-        genai.configure(api_key=self.api_key)
-        
-        # Initialize the model
-        self.model = genai.GenerativeModel('gemini-flash-latest')
-        
+
+        self.client = genai.Client(api_key=self.api_key)
+
         # Define the extraction prompt
         self.user_prompt = """
 You are an advanced medical data extraction engine powered by OCR and structured parsing.
@@ -230,9 +244,13 @@ Before responding:
             
             # Open image using PIL
             image = Image.open(file_path_obj)
-            
+
             # Generate content with the image and prompt
-            response = self.model.generate_content([self.user_prompt, image])
+            response = self.client.models.generate_content(
+                model=self.MODEL_NAME,
+                contents=[self.user_prompt, image],
+                config=GENERATE_CONTENT_CONFIG,
+            )
             
             # Extract text from response
             response_text = response.text.strip()

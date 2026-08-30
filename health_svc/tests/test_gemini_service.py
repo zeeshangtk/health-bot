@@ -78,10 +78,9 @@ def sample_gemini_response():
 def gemini_service(mock_api_key):
     """Create a GeminiService instance with mocked API key."""
     with patch.dict(os.environ, {"GEMINI_API_KEY": mock_api_key}):
-        with patch('services.gemini_service.genai.configure'):
-            with patch('services.gemini_service.genai.GenerativeModel'):
-                service = GeminiService(api_key=mock_api_key)
-                yield service
+        with patch('services.gemini_service.genai.Client'):
+            service = GeminiService(api_key=mock_api_key)
+            yield service
 
 
 class TestGeminiServiceInit:
@@ -89,43 +88,38 @@ class TestGeminiServiceInit:
     
     def test_init_with_api_key(self, mock_api_key):
         """Test initialization with provided API key."""
-        with patch('services.gemini_service.genai.configure') as mock_configure:
-            with patch('services.gemini_service.genai.GenerativeModel') as mock_model:
-                service = GeminiService(api_key=mock_api_key)
-                
-                mock_configure.assert_called_once_with(api_key=mock_api_key)
-                mock_model.assert_called_once_with('gemini-flash-latest')
-                assert service.api_key == mock_api_key
-    
+        with patch('services.gemini_service.genai.Client') as mock_client:
+            service = GeminiService(api_key=mock_api_key)
+
+            mock_client.assert_called_once_with(api_key=mock_api_key)
+            assert service.api_key == mock_api_key
+
     def test_init_with_settings(self, mock_api_key):
         """Test initialization with API key from settings."""
         with patch('services.gemini_service.settings') as mock_settings:
             mock_settings.gemini_api_key = mock_api_key
-            with patch('services.gemini_service.genai.configure') as mock_configure:
-                with patch('services.gemini_service.genai.GenerativeModel') as mock_model:
-                    service = GeminiService()
-                    
-                    mock_configure.assert_called_once_with(api_key=mock_api_key)
-                    mock_model.assert_called_once_with('gemini-flash-latest')
-                    assert service.api_key == mock_api_key
-    
+            with patch('services.gemini_service.genai.Client') as mock_client:
+                service = GeminiService()
+
+                mock_client.assert_called_once_with(api_key=mock_api_key)
+                assert service.api_key == mock_api_key
+
     def test_init_without_api_key_raises_error(self):
         """Test that initialization without API key raises ValueError."""
         with patch('services.gemini_service.settings') as mock_settings:
             mock_settings.gemini_api_key = ""
             with pytest.raises(ValueError, match="GEMINI_API_KEY"):
                 GeminiService()
-    
+
     def test_init_sets_user_prompt(self, mock_api_key):
         """Test that user prompt is set correctly."""
-        with patch('services.gemini_service.genai.configure'):
-            with patch('services.gemini_service.genai.GenerativeModel'):
-                service = GeminiService(api_key=mock_api_key)
-                
-                assert service.user_prompt is not None
-                assert "hospital_info" in service.user_prompt
-                assert "patient_info" in service.user_prompt
-                assert "biochemistry_results" in service.user_prompt
+        with patch('services.gemini_service.genai.Client'):
+            service = GeminiService(api_key=mock_api_key)
+
+            assert service.user_prompt is not None
+            assert "hospital_info" in service.user_prompt
+            assert "patient_info" in service.user_prompt
+            assert "biochemistry_results" in service.user_prompt
 
 
 class TestExtractLabReport:
@@ -137,18 +131,17 @@ class TestExtractLabReport:
         mock_response = MagicMock()
         mock_response.text = json.dumps(sample_gemini_response)
         
-        mock_model_instance = MagicMock()
-        mock_model_instance.generate_content.return_value = mock_response
-        gemini_service.model = mock_model_instance
+        gemini_service.client.models.generate_content.return_value = mock_response
         
         # Call the method
         result = gemini_service.extract_lab_report(temp_image_file)
         
         # Verify model was called with image and prompt
-        mock_model_instance.generate_content.assert_called_once()
-        call_args = mock_model_instance.generate_content.call_args[0][0]
-        assert call_args[0] == gemini_service.user_prompt
-        assert isinstance(call_args[1], Image.Image)
+        gemini_service.client.models.generate_content.assert_called_once()
+        call_kwargs = gemini_service.client.models.generate_content.call_args.kwargs
+        contents = call_kwargs["contents"]
+        assert contents[0] == gemini_service.user_prompt
+        assert isinstance(contents[1], Image.Image)
         
         # Verify result structure
         assert "hospital_info" in result
@@ -166,9 +159,7 @@ class TestExtractLabReport:
         mock_response = MagicMock()
         mock_response.text = f"```json\n{json_text}\n```"
         
-        mock_model_instance = MagicMock()
-        mock_model_instance.generate_content.return_value = mock_response
-        gemini_service.model = mock_model_instance
+        gemini_service.client.models.generate_content.return_value = mock_response
         
         result = gemini_service.extract_lab_report(temp_image_file)
         
@@ -181,9 +172,7 @@ class TestExtractLabReport:
         mock_response = MagicMock()
         mock_response.text = f"```\n{json_text}\n```"
         
-        mock_model_instance = MagicMock()
-        mock_model_instance.generate_content.return_value = mock_response
-        gemini_service.model = mock_model_instance
+        gemini_service.client.models.generate_content.return_value = mock_response
         
         result = gemini_service.extract_lab_report(temp_image_file)
         
@@ -200,18 +189,14 @@ class TestExtractLabReport:
         mock_response = MagicMock()
         mock_response.text = "This is not valid JSON"
         
-        mock_model_instance = MagicMock()
-        mock_model_instance.generate_content.return_value = mock_response
-        gemini_service.model = mock_model_instance
+        gemini_service.client.models.generate_content.return_value = mock_response
         
         with pytest.raises(ValueError, match="Invalid JSON"):
             gemini_service.extract_lab_report(temp_image_file)
     
     def test_extract_lab_report_api_error(self, gemini_service, temp_image_file):
         """Test extraction when Gemini API raises an error."""
-        mock_model_instance = MagicMock()
-        mock_model_instance.generate_content.side_effect = Exception("API Error")
-        gemini_service.model = mock_model_instance
+        gemini_service.client.models.generate_content.side_effect = Exception("API Error")
         
         with pytest.raises(Exception, match="API Error"):
             gemini_service.extract_lab_report(temp_image_file)
@@ -221,9 +206,7 @@ class TestExtractLabReport:
         mock_response = MagicMock()
         mock_response.text = ""
         
-        mock_model_instance = MagicMock()
-        mock_model_instance.generate_content.return_value = mock_response
-        gemini_service.model = mock_model_instance
+        gemini_service.client.models.generate_content.return_value = mock_response
         
         with pytest.raises(ValueError, match="Invalid JSON"):
             gemini_service.extract_lab_report(temp_image_file)
@@ -317,9 +300,7 @@ class TestIntegration:
         mock_response = MagicMock()
         mock_response.text = json.dumps(sample_gemini_response)
         
-        mock_model_instance = MagicMock()
-        mock_model_instance.generate_content.return_value = mock_response
-        gemini_service.model = mock_model_instance
+        gemini_service.client.models.generate_content.return_value = mock_response
         
         # Extract
         result = gemini_service.extract_lab_report(temp_image_file)
@@ -344,16 +325,14 @@ class TestIntegration:
             "biochemistry_results": {}
         })
         
-        mock_model_instance = MagicMock()
-        mock_model_instance.generate_content.return_value = mock_response
-        gemini_service.model = mock_model_instance
+        gemini_service.client.models.generate_content.return_value = mock_response
         
         # Extract
         gemini_service.extract_lab_report(temp_image_file)
         
         # Verify image was opened and passed
-        call_args = mock_model_instance.generate_content.call_args[0][0]
-        assert len(call_args) == 2
-        assert call_args[0] == gemini_service.user_prompt
-        assert isinstance(call_args[1], Image.Image)
+        contents = gemini_service.client.models.generate_content.call_args.kwargs["contents"]
+        assert len(contents) == 2
+        assert contents[0] == gemini_service.user_prompt
+        assert isinstance(contents[1], Image.Image)
 

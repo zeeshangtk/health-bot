@@ -64,7 +64,7 @@ def _report_progress(task, stage: str, detail: str) -> None:
         logger.warning(f"Failed to report progress ({stage}): {e}")
 
 # Constants
-DEFAULT_RETRY_BASE_DELAY = 2  # seconds
+RETRY_DELAY_SECONDS = 5
 MAX_RETRIES = 3
 # Non-retryable errors - these indicate bad data or missing resources
 # that won't be fixed by retrying
@@ -110,20 +110,6 @@ def parse_sample_date(date_str: str) -> datetime:
     error_msg = f"Failed to parse sample date '{date_str}' with any of the expected formats."
     logger.error(error_msg)
     raise ValueError(f"{error_msg} Expected format like: DD-MM-YYYY HH:MM AM/PM")
-
-
-def _calculate_retry_delay(retry_count: int, base_delay: int = DEFAULT_RETRY_BASE_DELAY) -> int:
-    """
-    Calculate exponential backoff delay for retries.
-    
-    Args:
-        retry_count: Current retry attempt number (0-indexed).
-        base_delay: Base delay in seconds (default: 2).
-    
-    Returns:
-        int: Delay in seconds before next retry.
-    """
-    return base_delay ** retry_count
 
 
 def validate_uploaded_file(file_path: Path, expected_size: int, filename: str) -> None:
@@ -349,7 +335,7 @@ def process_uploaded_file(
         ValueError: If data validation fails (non-retryable).
         ValidationError: If lab report structure is invalid (non-retryable).
         Retry: If processing fails with retryable error, task will be retried
-               up to MAX_RETRIES times with exponential backoff.
+               up to MAX_RETRIES times, waiting RETRY_DELAY_SECONDS between attempts.
     """
     try:
         logger.info(
@@ -474,8 +460,8 @@ def process_uploaded_file(
                 }
             )
         
-        # Retry with exponential backoff
+        # Retry after a fixed delay, up to MAX_RETRIES times
         raise self.retry(
             exc=exc,
-            countdown=_calculate_retry_delay(self.request.retries)
+            countdown=RETRY_DELAY_SECONDS
         )
