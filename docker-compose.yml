@@ -74,6 +74,7 @@ services:
       retries: 3
     networks:
       - health-bot-network
+      - homelab
 
   # Celery Worker for background tasks
   celery_worker:
@@ -188,3 +189,7 @@ volumes:
 networks:
   health-bot-network:
     driver: bridge
+  # Shared network with the homelab stack so Prometheus (job "health-bot-api"
+  # in homelab/prometheus.yml) can resolve and scrape this container.
+  homelab:
+    external: true
