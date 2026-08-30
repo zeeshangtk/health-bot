@@ -13,6 +13,7 @@ none of the previous handlers (CommandHandler, ConversationHandler, etc.) matche
 """
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode
 from telegram.ext import MessageHandler, filters, ContextTypes
 
 logger = logging.getLogger(__name__)
@@ -117,23 +118,29 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
             f"User {user_id} sent unrecognized message: {message_text[:50]}"
         )
     
-    # Build the help message
+    # Build the help message - tone depends on whether this was an actual
+    # unknown command vs. just a stray text message (e.g. "Hello").
+    if is_command:
+        intro = "🤔 I don't recognize that command."
+    else:
+        intro = "👋 Hi! Tap a button below, or use a command:"
+
     help_message = (
-        "🤔 Sorry, I didn't understand that command.\n\n"
-        "Here are the commands I support:\n\n"
-        "/add_record — Add a new medical record (text or photo)\n"
-        "/upload_record — Upload a medical lab report image\n"
-        "/view_records — View recent records\n"
-        "/view_records_graph — View health records graph\n"
-        "/add_patient — Add a new patient\n"
-        "/get_patients — List all patients\n"
-        "/export — Export records as CSV/JSON\n"
-        "/cancel — Cancel current operation\n"
-        "/start — Start or restart the bot"
+        f"{intro}\n\n"
+        "<b>/add_record</b> — Add a new medical record (text or photo)\n"
+        "<b>/upload_record</b> — Upload a medical lab report image\n"
+        "<b>/view_records</b> — View recent records\n"
+        "<b>/view_records_graph</b> — View health records graph\n"
+        "<b>/add_patient</b> — Add a new patient\n"
+        "<b>/get_patients</b> — List all patients\n"
+        "<b>/export</b> — Export records as CSV/JSON\n"
+        "<b>/cancel</b> — Cancel current operation\n"
+        "<b>/start</b> — Start or restart the bot"
     )
-    
-    # Create inline keyboard with command buttons for convenience
-    # Note: These buttons provide visual prompts; users still need to type commands
+
+    # Inline keyboard mirrors the command list; each button now actually
+    # triggers its command (see help_callback_handler) rather than just
+    # prompting the user to type it.
     keyboard = [
         [
             InlineKeyboardButton("➕ Add Record", callback_data="/add_record"),
@@ -145,7 +152,7 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
         ],
         [
             InlineKeyboardButton("📥 Export", callback_data="/export"),
-            InlineKeyboardButton("➕ Add Patient", callback_data="/add_patient"),
+            InlineKeyboardButton("🆕 Add Patient", callback_data="/add_patient"),
         ],
         [
             InlineKeyboardButton("👥 Get Patients", callback_data="/get_patients"),
@@ -156,13 +163,14 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
         ],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     # Send the help message with inline keyboard
     # Add error handling for network issues (timeouts, connection errors, etc.)
     try:
         await update.message.reply_text(
             help_message,
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
         )
     except Exception as e:
         # Log the error but don't crash the bot
@@ -173,7 +181,8 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
         # Try to send a simpler message without the keyboard as fallback
         try:
             await update.message.reply_text(
-                help_message
+                help_message,
+                parse_mode=ParseMode.HTML
             )
         except Exception as fallback_error:
             logger.error(
@@ -234,8 +243,10 @@ async def help_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             length=len(command)
         )
         
-        # Create a new Message object with the command as text
-        # We need to construct it with the bot instance and proper entities
+        # Create a new Message object with the command as text.
+        # `bot` isn't a Message() constructor kwarg in this PTB version -
+        # it must be attached afterwards via set_bot(), or this raises TypeError
+        # and silently falls through to the "please type the command" fallback below.
         synthetic_message = Message(
             message_id=original_msg.message_id + 1000000,  # Offset to avoid conflicts
             from_user=query.from_user,
@@ -243,8 +254,8 @@ async def help_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             chat=original_msg.chat,
             text=command,
             entities=[command_entity],  # Mark it as a bot command
-            bot=context.bot  # Important: need the bot instance
         )
+        synthetic_message.set_bot(context.bot)
         
         # Create a synthetic Update with the message
         synthetic_update = Update(
