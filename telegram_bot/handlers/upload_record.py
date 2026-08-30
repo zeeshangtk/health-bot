@@ -5,7 +5,6 @@ Rate limited with stricter limits for file uploads.
 """
 import html
 import logging
-from typing import Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -389,7 +388,7 @@ async def _finalize_upload_success(
     patient_name: str,
     result: dict
 ) -> None:
-    """Build the review state (or a plain message if nothing was extracted) and render it."""
+    """Render the final extraction summary (table + review keyboard) in place."""
     lab_report = result.get("lab_report") or {}
     test_results = lab_report.get("results") or []
     rows = [
@@ -397,108 +396,56 @@ async def _finalize_upload_success(
         for t in test_results
     ]
 
-    header_lines = [
+    lines = [
         "✅ <b>Lab Report Processed</b>",
         f"👤 Patient: {html.escape(patient_name)}",
         f"💾 {result.get('records_saved', 0)} value(s) saved",
     ]
     paperless_status = result.get("paperless_status")
     if paperless_status == "failed":
-        header_lines.append("⚠️ Archiving to Paperless failed (file kept locally; won't retry automatically).")
+        lines.append("⚠️ Archiving to Paperless failed (file kept locally; won't retry automatically).")
     elif paperless_status == "ok":
-        header_lines.append("🗄️ Archived to Paperless.")
+        lines.append("🗄️ Archived to Paperless.")
 
-    if not rows:
-        header_lines.append("\n(No test values were extracted from this image.)")
-        await context.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text="\n".join(header_lines),
-            parse_mode=ParseMode.HTML,
-        )
-        return
+    text = "\n".join(lines)
+    reply_markup = None
+    if rows:
+        text += "\n" + render_table(["Test", "Value", "Unit"], rows)
+        checked = [False] * len(rows)
+        context.chat_data.setdefault(REVIEW_STATE_KEY, {})[message_id] = {
+            "rows": rows,
+            "checked": checked,
+        }
+        reply_markup = _build_review_keyboard(rows, checked)
+    else:
+        text += "\n\n(No test values were extracted from this image.)"
 
-    review = {
-        "rows": rows,
-        "checked": [False] * len(rows),
-        "record_ids": [t.get("record_id") for t in test_results],
-        "deleted": [False] * len(rows),
-        "pending_delete": None,
-        "header_lines": header_lines,
-    }
-    context.chat_data.setdefault(REVIEW_STATE_KEY, {})[message_id] = review
-
-    await _refresh_review_message(context, chat_id, message_id, review)
-
-
-def _build_review_text(review: dict) -> str:
-    """Render the header + extracted-values table, showing deleted rows as such."""
-    display_rows = [
-        [name, "(deleted)" if review["deleted"][i] else value, "" if review["deleted"][i] else unit]
-        for i, (name, value, unit) in enumerate(review["rows"])
-    ]
-    return "\n".join(review["header_lines"]) + "\n" + render_table(["Test", "Value", "Unit"], display_rows)
-
-
-def _build_review_keyboard(review: dict) -> InlineKeyboardMarkup:
-    """
-    Build the review keyboard: per-row toggle/edit/delete buttons, a Yes/No
-    confirm sub-row for the row pending deletion, or a disabled marker for
-    rows already deleted.
-    """
-    rows = review["rows"]
-    checked = review["checked"]
-    record_ids = review["record_ids"]
-    deleted = review["deleted"]
-    pending_delete = review["pending_delete"]
-
-    keyboard = []
-    for idx, row in enumerate(rows):
-        label = row[0] if row and row[0] else f"Row {idx + 1}"
-
-        if deleted[idx]:
-            keyboard.append([InlineKeyboardButton(f"🗑️ {label} (deleted)"[:64], callback_data="rvw_noop")])
-            continue
-
-        if pending_delete == idx:
-            keyboard.append([InlineKeyboardButton(f"❓ Delete '{label}'?"[:64], callback_data="rvw_noop")])
-            keyboard.append([
-                InlineKeyboardButton("✅ Yes", callback_data=f"rvw_del_confirm:{idx}"),
-                InlineKeyboardButton("↩️ No", callback_data=f"rvw_del_cancel:{idx}"),
-            ])
-            continue
-
-        emoji = "☑️" if checked[idx] else "⬜"
-        buttons = [InlineKeyboardButton(f"{emoji} {label}"[:48], callback_data=f"rvw_toggle:{idx}")]
-        if record_ids[idx] is not None:
-            buttons.append(InlineKeyboardButton("✏️", callback_data=f"rvw_edit:{idx}"))
-            buttons.append(InlineKeyboardButton("🗑️", callback_data=f"rvw_del:{idx}"))
-        keyboard.append(buttons)
-
-    return InlineKeyboardMarkup(keyboard)
-
-
-async def _refresh_review_message(
-    context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, review: dict
-) -> None:
-    """Re-render the review message's text + keyboard from current state."""
     await context.bot.edit_message_text(
         chat_id=chat_id,
         message_id=message_id,
-        text=_build_review_text(review),
+        text=text,
         parse_mode=ParseMode.HTML,
-        reply_markup=_build_review_keyboard(review),
+        reply_markup=reply_markup,
     )
 
 
-def _get_review(context: ContextTypes.DEFAULT_TYPE, message_id: int) -> Optional[dict]:
-    return context.chat_data.get(REVIEW_STATE_KEY, {}).get(message_id)
+def _build_review_keyboard(rows: list, checked: list) -> InlineKeyboardMarkup:
+    """Build the ☑️/⬜ per-row review toggle keyboard (annotate-only, no edit/delete)."""
+    keyboard = []
+    for idx, row in enumerate(rows):
+        label = row[0] if row and row[0] else f"Row {idx + 1}"
+        emoji = "☑️" if checked[idx] else "⬜"
+        keyboard.append([InlineKeyboardButton(f"{emoji} {label}"[:64], callback_data=f"rvw_toggle:{idx}")])
+    keyboard.append([InlineKeyboardButton("⚠️ Something looks wrong", callback_data="rvw_issue")])
+    return InlineKeyboardMarkup(keyboard)
 
 
 async def review_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Flip a single row's reviewed flag and re-render the keyboard in place."""
     query = update.callback_query
-    review = _get_review(context, query.message.message_id)
+    message_id = query.message.message_id
+    review = context.chat_data.get(REVIEW_STATE_KEY, {}).get(message_id)
+
     if not review:
         await query.answer("This review has expired.", show_alert=True)
         return
@@ -506,169 +453,27 @@ async def review_toggle_callback(update: Update, context: ContextTypes.DEFAULT_T
     idx = int(query.data.split(":", 1)[1])
     review["checked"][idx] = not review["checked"][idx]
     await query.answer()
-    await query.edit_message_reply_markup(reply_markup=_build_review_keyboard(review))
-
-
-async def review_edit_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Prompt the user for a corrected value and remember which row it's for."""
-    query = update.callback_query
-    message_id = query.message.message_id
-    review = _get_review(context, message_id)
-    if not review:
-        await query.answer("This review has expired.", show_alert=True)
-        return
-
-    idx = int(query.data.split(":", 1)[1])
-    record_id = review["record_ids"][idx]
-    if record_id is None:
-        await query.answer("Can't edit this row - no record ID available.", show_alert=True)
-        return
-
-    context.chat_data["pending_edit"] = {"message_id": message_id, "idx": idx, "record_id": record_id}
-    await query.answer()
-
-    name, value, unit = review["rows"][idx]
-    await query.message.reply_text(
-        f"✏️ Send the corrected value for '{html.escape(name)}' "
-        f"(currently: {html.escape(value)} {html.escape(unit)}).",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="rvw_edit_cancel")]]),
-        parse_mode=ParseMode.HTML,
+    await query.edit_message_reply_markup(
+        reply_markup=_build_review_keyboard(review["rows"], review["checked"])
     )
 
 
-async def review_edit_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Cancel a pending edit prompt."""
+async def review_issue_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Explain that editing/deleting extracted values isn't supported yet."""
     query = update.callback_query
-    context.chat_data.pop("pending_edit", None)
-    await query.answer("Cancelled.")
-    await query.edit_message_text("Edit cancelled.")
-
-
-async def review_edit_value_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Global text handler capturing a review-edit correction. No-ops when no
-    edit is pending for this chat - registered in handler group 1 (see
-    bot.py) so it never competes with any ConversationHandler's own text
-    steps for the same update.
-    """
-    pending = context.chat_data.get("pending_edit")
-    if not pending or not update.message or not update.message.text:
-        return
-
-    new_value = update.message.text.strip()
-    if not new_value:
-        return
-
-    client = get_health_api_client()
-    try:
-        await client.update_record(pending["record_id"], value=new_value)
-    except ValueError as e:
-        logger.error(f"Error updating record {pending['record_id']}: {e}")
-        await update.message.reply_text("❌ Couldn't save that correction - the record may no longer exist.")
-        context.chat_data.pop("pending_edit", None)
-        return
-    except ConnectionError as e:
-        logger.error(f"Connection error updating record {pending['record_id']}: {e}")
-        await update.message.reply_text("❌ Error connecting to health service. Please try again.")
-        return
-
-    context.chat_data.pop("pending_edit", None)
-
-    review = _get_review(context, pending["message_id"])
-    if review:
-        review["rows"][pending["idx"]][1] = new_value
-        await _refresh_review_message(context, update.effective_chat.id, pending["message_id"], review)
-
-    await update.message.reply_text("✅ Updated.")
-
-
-async def review_delete_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show a Yes/No confirmation for deleting a row."""
-    query = update.callback_query
-    review = _get_review(context, query.message.message_id)
-    if not review:
-        await query.answer("This review has expired.", show_alert=True)
-        return
-
-    review["pending_delete"] = int(query.data.split(":", 1)[1])
     await query.answer()
-    await query.edit_message_reply_markup(reply_markup=_build_review_keyboard(review))
+    await query.message.reply_text(
+        "Editing or deleting extracted values isn't supported yet.\n"
+        "To log the correct value yourself, use /add_record for now."
+    )
 
 
-async def review_delete_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Actually delete the record and mark the row as deleted."""
-    query = update.callback_query
-    message_id = query.message.message_id
-    review = _get_review(context, message_id)
-    if not review:
-        await query.answer("This review has expired.", show_alert=True)
-        return
-
-    idx = int(query.data.split(":", 1)[1])
-    record_id = review["record_ids"][idx]
-
-    client = get_health_api_client()
-    try:
-        if record_id is not None:
-            await client.delete_record(record_id)
-    except ValueError as e:
-        logger.error(f"Error deleting record {record_id}: {e}")
-        review["pending_delete"] = None
-        await query.answer("Couldn't delete - the record may no longer exist.", show_alert=True)
-        await query.edit_message_reply_markup(reply_markup=_build_review_keyboard(review))
-        return
-    except ConnectionError as e:
-        logger.error(f"Connection error deleting record {record_id}: {e}")
-        await query.answer("Error connecting to health service.", show_alert=True)
-        return
-
-    review["deleted"][idx] = True
-    review["pending_delete"] = None
-    await query.answer("Deleted.")
-    await _refresh_review_message(context, update.effective_chat.id, message_id, review)
-
-
-async def review_delete_cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Cancel a pending delete confirmation."""
-    query = update.callback_query
-    review = _get_review(context, query.message.message_id)
-    if not review:
-        await query.answer()
-        return
-
-    idx = int(query.data.split(":", 1)[1])
-    if review["pending_delete"] == idx:
-        review["pending_delete"] = None
-    await query.answer("Cancelled.")
-    await query.edit_message_reply_markup(reply_markup=_build_review_keyboard(review))
-
-
-async def review_noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """No-op callback for disabled/informational buttons (e.g. a deleted row)."""
-    await update.callback_query.answer()
-
-
-def get_upload_review_callback_handlers() -> list:
+def get_upload_review_handlers() -> list:
     """CallbackQueryHandlers for the post-upload review keyboard (registered globally, not tied to the upload ConversationHandler)."""
     return [
         CallbackQueryHandler(review_toggle_callback, pattern=r"^rvw_toggle:\d+$"),
-        CallbackQueryHandler(review_edit_start_callback, pattern=r"^rvw_edit:\d+$"),
-        CallbackQueryHandler(review_edit_cancel_callback, pattern=r"^rvw_edit_cancel$"),
-        CallbackQueryHandler(review_delete_start_callback, pattern=r"^rvw_del:\d+$"),
-        CallbackQueryHandler(review_delete_confirm_callback, pattern=r"^rvw_del_confirm:\d+$"),
-        CallbackQueryHandler(review_delete_cancel_callback, pattern=r"^rvw_del_cancel:\d+$"),
-        CallbackQueryHandler(review_noop_callback, pattern=r"^rvw_noop$"),
+        CallbackQueryHandler(review_issue_callback, pattern=r"^rvw_issue$"),
     ]
-
-
-def get_upload_review_message_handler() -> MessageHandler:
-    """
-    Global text handler that captures a review-edit correction. Must be
-    registered in a handler group other than the default (0) - see bot.py -
-    so it never competes with an active ConversationHandler's own text step
-    for the same update.
-    """
-    return MessageHandler(filters.TEXT & ~filters.COMMAND, review_edit_value_received)
 
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

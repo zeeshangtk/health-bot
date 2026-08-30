@@ -31,14 +31,12 @@ from typing import Optional, List
 from schemas import (
     HealthRecordCreate,
     HealthRecordResponse,
-    HealthRecordUpdate,
     ImageUploadResponse,
     UploadStatusResponse
 )
 from services import HealthService, UploadService
 from services.graph import GraphService
 from core.auth import verify_api_key
-from core.exceptions import InvalidRecordDataError
 from core.dependencies import (
     get_health_service,
     get_upload_service,
@@ -176,68 +174,6 @@ async def list_records(
         record_type=record_type,
         limit=effective_limit
     )
-
-
-@router.patch(
-    "/{record_id}",
-    response_model=HealthRecordResponse,
-    summary="Update a health record's value/unit",
-    description="Partially update the value and/or unit of an existing health record. "
-                "record_type, patient, timestamp, and lab_name cannot be changed via this endpoint."
-)
-async def update_record(
-    record_id: int,
-    patch: HealthRecordUpdate,
-    health_service: HealthService = Depends(get_health_service)
-):
-    """
-    Update a health record's value and/or unit.
-
-    - **record_id**: ID of the health record to update
-    - **value**: Corrected measurement value (optional)
-    - **unit**: Corrected unit of measurement (optional)
-
-    At least one of value/unit must be provided. Fields omitted from the
-    request body are left unchanged.
-
-    Raises:
-    - 400 Bad Request: If no fields are provided to update (InvalidRecordDataError)
-    - 404 Not Found: If the record doesn't exist (RecordNotFoundError)
-    - 500 Internal Server Error: For database errors (DatabaseError)
-    """
-    fields_set = patch.model_dump(exclude_unset=True)
-    if not fields_set:
-        raise InvalidRecordDataError(detail="At least one of value/unit must be provided")
-
-    return health_service.update_record(
-        record_id,
-        value=fields_set.get("value"),
-        unit=fields_set.get("unit"),
-        update_unit="unit" in fields_set
-    )
-
-
-@router.delete(
-    "/{record_id}",
-    status_code=204,
-    summary="Delete a health record",
-    description="Permanently delete a single health record by ID. This cannot be undone."
-)
-async def delete_record(
-    record_id: int,
-    health_service: HealthService = Depends(get_health_service)
-):
-    """
-    Delete a health record.
-
-    - **record_id**: ID of the health record to delete
-
-    Raises:
-    - 404 Not Found: If the record doesn't exist (RecordNotFoundError)
-    - 500 Internal Server Error: For database errors (DatabaseError)
-    """
-    health_service.delete_record(record_id)
-    return Response(status_code=204)
 
 
 @router.get(

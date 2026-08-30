@@ -211,30 +211,29 @@ def save_lab_report_to_database(
     sample_timestamp: datetime,
     health_service: Optional[HealthService] = None,
     patient_name: Optional[str] = None
-) -> List[int]:
+) -> int:
     """
     Save lab report records to database atomically.
-
+    
     Args:
         lab_report_obj: Parsed LabReport object.
         sample_timestamp: Parsed sample collection timestamp.
         health_service: Optional HealthService instance (for testing).
         patient_name: Optional patient name to override extracted name.
-
+    
     Returns:
-        List[int]: IDs of the inserted records, in the same order as
-            lab_report_obj.results.
-
+        int: Number of records saved.
+    
     Raises:
         PatientNotFoundError: If patient is not found in database.
         DatabaseError: For database errors.
     """
     # Extract test results as list of dictionaries
     test_results = convert_test_results_to_dicts(lab_report_obj.results)
-
+    
     # Use provided patient name or fallback to extracted one
     final_patient_name = patient_name or lab_report_obj.patient_info.patient_name
-
+    
     # Get service instance via DI pattern
     # Note: In Celery tasks, we can't use FastAPI's Depends(), so we
     # manually construct the service with injected dependencies
@@ -245,17 +244,17 @@ def save_lab_report_to_database(
             patient_repository=patient_repo,
             health_record_repository=record_repo
         )
-
+    
     # Save all records atomically
     # This now raises PatientNotFoundError instead of ValueError
-    record_ids = health_service.save_lab_report_records(
+    records_saved = health_service.save_lab_report_records(
         patient_name=final_patient_name,
         timestamp=sample_timestamp,
         lab_name=lab_report_obj.hospital_info.hospital_name,
         test_results=test_results
     )
-
-    return record_ids
+    
+    return records_saved
 
 
 def create_processing_result(
@@ -388,16 +387,11 @@ def process_uploaded_file(
         # Step 3: Transform and save to database
         _report_progress(self, stage="saving", detail="Saving extracted values")
         lab_report_obj, sample_timestamp, _ = transform_lab_report_to_records(lab_report)
-        record_ids = save_lab_report_to_database(
+        records_saved = save_lab_report_to_database(
             lab_report_obj,
             sample_timestamp,
             patient_name=patient_name
         )
-        # Thread each inserted record's ID back onto the raw result dict so the
-        # bot can map a displayed test value to a real record for edit/delete.
-        for test_result_dict, record_id in zip(lab_report["results"], record_ids):
-            test_result_dict["record_id"] = record_id
-        records_saved = len(record_ids)
         logger.info(
             f"Successfully stored {records_saved} health records "
             f"from lab report for file: {filename}"

@@ -17,7 +17,7 @@ from datetime import datetime
 
 from repositories import PatientRepository, HealthRecordRepository
 from schemas import HealthRecordResponse
-from core.exceptions import PatientNotFoundError, RecordNotFoundError, DatabaseError
+from core.exceptions import PatientNotFoundError, DatabaseError
 from core.datetime_utils import to_utc, format_iso
 
 logger = logging.getLogger(__name__)
@@ -98,7 +98,6 @@ class HealthService:
             
             logger.info(f"Health record saved successfully for patient: {patient}")
             return HealthRecordResponse(
-                id=record_dict["id"],
                 timestamp=record_dict["timestamp"],
                 patient=record_dict["patient"],
                 record_type=record_dict["record_type"],
@@ -135,7 +134,6 @@ class HealthService:
         
         return [
             HealthRecordResponse(
-                id=record.id,
                 timestamp=format_iso(record.timestamp),
                 patient=record.patient,
                 record_type=record.record_type,
@@ -152,36 +150,36 @@ class HealthService:
         timestamp: datetime,
         lab_name: str,
         test_results: List[Dict[str, Any]]
-    ) -> List[int]:
+    ) -> int:
         """
         Save multiple health records from a lab report atomically.
-
+        
         Args:
             patient_name: Name of the patient.
             timestamp: When the sample was collected (will be normalized to UTC).
             lab_name: Name of the laboratory/hospital.
             test_results: List of test result dictionaries with keys:
                          test_name, results, unit (optional).
-
+        
         Returns:
-            List[int]: IDs of the inserted records, in the same order as test_results.
-
+            int: Number of records saved.
+        
         Raises:
             PatientNotFoundError: If patient is not found in database.
             DatabaseError: If a database error occurs.
         """
         logger.info(f"Saving {len(test_results)} lab report records for patient: {patient_name}")
-
+        
         # Get patient ID from name
         patient_id = self._patient_repo.get_id_by_name(patient_name)
         if patient_id is None:
             logger.warning(f"Patient not found: {patient_name}")
             raise PatientNotFoundError(patient_name=patient_name)
-
+        
         try:
             # Normalize timestamp to UTC
             utc_timestamp = to_utc(timestamp)
-
+            
             # Save records atomically
             record_ids = self._record_repo.save_batch(
                 patient_id=patient_id,
@@ -189,83 +187,9 @@ class HealthService:
                 lab_name=lab_name,
                 test_results=test_results
             )
-
+            
             logger.info(f"Saved {len(record_ids)} records for patient: {patient_name}")
-            return record_ids
+            return len(record_ids)
         except Exception as e:
             logger.error(f"Database error saving lab report records: {e}", exc_info=True)
             raise DatabaseError(operation="save_lab_report_records") from e
-
-    def update_record(
-        self,
-        record_id: int,
-        value: Optional[str] = None,
-        unit: Optional[str] = None,
-        update_unit: bool = False
-    ) -> HealthRecordResponse:
-        """
-        Update a health record's value and/or unit.
-
-        Args:
-            record_id: ID of the health record to update.
-            value: New value, if being changed.
-            unit: New unit, if update_unit is True.
-            update_unit: Whether unit should be updated at all - distinguishes
-                "not provided" from "explicitly set to null".
-
-        Returns:
-            HealthRecordResponse: The updated record.
-
-        Raises:
-            RecordNotFoundError: If no record with this ID exists.
-            DatabaseError: If a database error occurs.
-        """
-        logger.info(f"Updating health record {record_id}")
-
-        try:
-            record_dict = self._record_repo.update(
-                record_id, value=value, unit=unit, update_unit=update_unit
-            )
-        except Exception as e:
-            logger.error(f"Database error updating health record {record_id}: {e}", exc_info=True)
-            raise DatabaseError(operation="update_record") from e
-
-        if record_dict is None:
-            logger.warning(f"Health record not found: {record_id}")
-            raise RecordNotFoundError(record_id=record_id)
-
-        logger.info(f"Health record {record_id} updated successfully")
-        return HealthRecordResponse(
-            id=record_dict["id"],
-            timestamp=record_dict["timestamp"],
-            patient=record_dict["patient"],
-            record_type=record_dict["record_type"],
-            value=record_dict["value"],
-            unit=record_dict["unit"],
-            lab_name=record_dict["lab_name"]
-        )
-
-    def delete_record(self, record_id: int) -> None:
-        """
-        Delete a health record by ID.
-
-        Args:
-            record_id: ID of the health record to delete.
-
-        Raises:
-            RecordNotFoundError: If no record with this ID exists.
-            DatabaseError: If a database error occurs.
-        """
-        logger.info(f"Deleting health record {record_id}")
-
-        try:
-            deleted = self._record_repo.delete(record_id)
-        except Exception as e:
-            logger.error(f"Database error deleting health record {record_id}: {e}", exc_info=True)
-            raise DatabaseError(operation="delete_record") from e
-
-        if not deleted:
-            logger.warning(f"Health record not found: {record_id}")
-            raise RecordNotFoundError(record_id=record_id)
-
-        logger.info(f"Health record {record_id} deleted successfully")

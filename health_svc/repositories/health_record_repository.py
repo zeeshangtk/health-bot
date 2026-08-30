@@ -137,7 +137,7 @@ class HealthRecordRepository:
         
         # Use JOIN to get patient name from patients table
         query = """
-            SELECT hr.id, hr.timestamp, p.name, hr.record_type, hr.value, hr.unit, hr.lab_name
+            SELECT hr.timestamp, p.name, hr.record_type, hr.value, hr.unit, hr.lab_name 
             FROM health_records hr
             INNER JOIN patients p ON hr.patient_id = p.id
             WHERE 1=1
@@ -165,148 +165,18 @@ class HealthRecordRepository:
         records = []
         for row in rows:
             # Parse timestamp using our UTC-aware utility
-            timestamp = parse_datetime(row[1])
+            timestamp = parse_datetime(row[0])
             records.append(HealthRecord(
-                id=row[0],
                 timestamp=timestamp,
-                patient=row[2],  # Patient name from JOIN
-                record_type=row[3],
-                value=row[4],
-                unit=row[5],
-                lab_name=row[6] if row[6] is not None else "self"
+                patient=row[1],  # Patient name from JOIN
+                record_type=row[2],
+                value=row[3],
+                unit=row[4],
+                lab_name=row[5] if row[5] is not None else "self"
             ))
-
+        
         return records
     
-    def get_by_id(self, record_id: int) -> Optional[Dict[str, Any]]:
-        """
-        Fetch a single health record by ID, with patient name resolved.
-
-        Args:
-            record_id: ID of the health record.
-
-        Returns:
-            Dict with id, timestamp, patient, record_type, value, unit, lab_name,
-            created_at - or None if no record with this ID exists.
-        """
-        conn = self._db.get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("""
-                SELECT hr.id, hr.timestamp, p.name, hr.record_type, hr.value,
-                       hr.unit, hr.lab_name, hr.created_at
-                FROM health_records hr
-                INNER JOIN patients p ON hr.patient_id = p.id
-                WHERE hr.id = ?
-            """, (record_id,))
-            row = cursor.fetchone()
-        finally:
-            conn.close()
-
-        if row is None:
-            return None
-
-        return {
-            "id": row[0],
-            "timestamp": row[1],
-            "patient": row[2],
-            "record_type": row[3],
-            "value": row[4],
-            "unit": row[5],
-            "lab_name": row[6] if row[6] is not None else "self",
-            "created_at": row[7]
-        }
-
-    def update(
-        self,
-        record_id: int,
-        value: Optional[str] = None,
-        unit: Optional[str] = None,
-        update_unit: bool = False
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Update a health record's value and/or unit.
-
-        Args:
-            record_id: ID of the health record to update.
-            value: New value, if being changed.
-            unit: New unit, if update_unit is True (may be None to clear the unit).
-            update_unit: Whether unit should be updated at all - distinguishes
-                "not provided" from "explicitly set to null".
-
-        Returns:
-            The updated record (same shape as get_by_id), or None if no record
-            with this ID exists.
-        """
-        set_clauses = []
-        params: List[Any] = []
-        if value is not None:
-            set_clauses.append("value = ?")
-            params.append(value)
-        if update_unit:
-            set_clauses.append("unit = ?")
-            params.append(unit)
-
-        if not set_clauses:
-            return self.get_by_id(record_id)
-
-        conn = self._db.get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                f"UPDATE health_records SET {', '.join(set_clauses)} WHERE id = ?",
-                (*params, record_id)
-            )
-            if cursor.rowcount == 0:
-                conn.commit()
-                return None
-
-            # Fetch the updated record within the same transaction, matching
-            # the insert+select pattern used by save() to avoid a read/write race.
-            cursor.execute("""
-                SELECT hr.id, hr.timestamp, p.name, hr.record_type, hr.value,
-                       hr.unit, hr.lab_name, hr.created_at
-                FROM health_records hr
-                INNER JOIN patients p ON hr.patient_id = p.id
-                WHERE hr.id = ?
-            """, (record_id,))
-            row = cursor.fetchone()
-            conn.commit()
-        finally:
-            conn.close()
-
-        return {
-            "id": row[0],
-            "timestamp": row[1],
-            "patient": row[2],
-            "record_type": row[3],
-            "value": row[4],
-            "unit": row[5],
-            "lab_name": row[6] if row[6] is not None else "self",
-            "created_at": row[7]
-        }
-
-    def delete(self, record_id: int) -> bool:
-        """
-        Delete a health record by ID.
-
-        Args:
-            record_id: ID of the health record to delete.
-
-        Returns:
-            True if a record was deleted, False if no record with this ID existed.
-        """
-        conn = self._db.get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("DELETE FROM health_records WHERE id = ?", (record_id,))
-            deleted = cursor.rowcount > 0
-            conn.commit()
-        finally:
-            conn.close()
-
-        return deleted
-
     def save_batch(
         self,
         patient_id: int,

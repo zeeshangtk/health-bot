@@ -59,8 +59,6 @@ class HealthAPIClient:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.request(method, url, headers=headers, **kwargs)
                 response.raise_for_status()
-                if response.status_code == 204 or not response.content:
-                    return {}
                 return response.json()
         except httpx.HTTPStatusError as e:
             error_msg = f"API error {e.response.status_code}: {e.response.text}"
@@ -176,55 +174,6 @@ class HealthAPIClient:
         
         return await self._request("GET", "/api/v1/records", params=params)
     
-    async def update_record(
-        self,
-        record_id: int,
-        value: Optional[str] = None,
-        unit: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Update a health record's value and/or unit.
-
-        Args:
-            record_id: ID of the health record to update.
-            value: Corrected value (optional).
-            unit: Corrected unit (optional).
-
-        Returns:
-            Dict with the updated record.
-
-        Raises:
-            ValueError: If patient/record not found or API error (e.g. 404).
-            ConnectionError: If connection fails.
-        """
-        payload = {}
-        if value is not None:
-            payload["value"] = value
-        if unit is not None:
-            payload["unit"] = unit
-
-        return await self._request(
-            "PATCH",
-            f"/api/v1/records/{record_id}",
-            json=payload
-        )
-
-    async def delete_record(self, record_id: int) -> None:
-        """
-        Delete a health record.
-
-        Args:
-            record_id: ID of the health record to delete.
-
-        Raises:
-            ValueError: If record not found or API error (e.g. 404).
-            ConnectionError: If connection fails.
-        """
-        await self._request(
-            "DELETE",
-            f"/api/v1/records/{record_id}"
-        )
-
     async def upload_record_image(
         self,
         file_content: bytes,
