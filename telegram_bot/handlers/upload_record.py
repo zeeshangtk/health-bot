@@ -3,9 +3,10 @@ Upload record conversation handler.
 Multi-step flow for uploading medical lab report images.
 Rate limited with stricter limits for file uploads.
 """
+import html
 import logging
-from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
+from telegram.constants import ParseMode
 from telegram.ext import (
     ConversationHandler,
     CommandHandler,
@@ -16,6 +17,7 @@ from telegram.ext import (
 )
 
 from clients.health_api_client import get_health_api_client
+from utils.formatting import render_table
 from utils.rate_limiter import rate_limit_uploads
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,17 @@ SELECTING_PATIENT, WAITING_FOR_IMAGE = range(2)
 # Supported image formats
 SUPPORTED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp']
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB in bytes
+
+# Live upload-progress polling
+POLL_INTERVAL_SECONDS = 2.0
+MAX_POLL_ATTEMPTS = 60  # ~2 minutes at the interval above
+STAGE_LABELS = {
+    "validating": "📄 Validating uploaded file...",
+    "extracting": "🧪 Extracting lab values with AI...",
+    "archiving": "🗄️ Archiving document to Paperless...",
+    "saving": "💾 Saving extracted values...",
+}
+REVIEW_STATE_KEY = "upload_reviews"
 
 
 @rate_limit_uploads
@@ -248,33 +261,39 @@ async def image_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             content_type=content_type,
             patient=patient_name
         )
-        
-        # Build success message
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        success_message = (
-            "✅ **Lab Report Uploaded Successfully!**\n\n"
-            f"👤 Patient: {patient_name}\n"
-            f"📁 Filename: {result.get('filename', filename)}\n"
-            f"📅 Uploaded at: {timestamp}"
-        )
-        
-        # Add task ID if present
-        if result.get('task_id'):
-            success_message += f"\n🆔 Task ID: {result['task_id']}"
-        
-        await update.message.reply_text(
-            success_message,
-            parse_mode="Markdown"
-        )
-        
+
         logger.info(
             f"User {update.effective_user.id} uploaded record: "
             f"patient={patient_name}, filename={result.get('filename', filename)}"
         )
-        
+
+        task_id = result.get("task_id")
+        if task_id:
+            status_message = await update.message.reply_text("⏳ Processing your lab report...")
+            context.job_queue.run_repeating(
+                _poll_upload_status,
+                interval=POLL_INTERVAL_SECONDS,
+                first=POLL_INTERVAL_SECONDS,
+                chat_id=update.effective_chat.id,
+                name=f"upload_status_{task_id}",
+                data={
+                    "task_id": task_id,
+                    "message_id": status_message.message_id,
+                    "patient_name": patient_name,
+                    "attempts": 0,
+                    "last_label": None,
+                },
+            )
+        else:
+            # No background task was queued - nothing to poll for.
+            await update.message.reply_text(
+                f"✅ Lab report saved: {result.get('filename', filename)}\n"
+                f"👤 Patient: {patient_name}"
+            )
+
         # Clear context data
         context.user_data.clear()
-        
+
         return ConversationHandler.END
         
     except ValueError as e:
@@ -299,6 +318,162 @@ async def image_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "Please try again or use /cancel to exit."
         )
         return WAITING_FOR_IMAGE
+
+
+async def _poll_upload_status(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    JobQueue callback: poll the backend for background upload-processing
+    status and edit the placeholder message in place until the task reaches
+    a terminal state (or polling times out).
+    """
+    job = context.job
+    job_data = job.data
+    task_id = job_data["task_id"]
+    message_id = job_data["message_id"]
+    patient_name = job_data["patient_name"]
+    job_data["attempts"] += 1
+
+    client = get_health_api_client()
+    try:
+        status_response = await client.get_upload_status(task_id)
+    except (ValueError, ConnectionError) as e:
+        logger.warning(f"Error polling upload status for task {task_id}: {e}")
+        if job_data["attempts"] >= MAX_POLL_ATTEMPTS:
+            job.schedule_removal()
+            await context.bot.edit_message_text(
+                chat_id=job.chat_id,
+                message_id=message_id,
+                text="⚠️ Lost track of processing status. Check /view_records shortly to see if it completed."
+            )
+        return
+
+    state = status_response.get("status")
+
+    if state in ("PENDING", "PROGRESS"):
+        label = STAGE_LABELS.get(status_response.get("stage"), "⏳ Processing your lab report...")
+        if job_data["last_label"] != label:
+            job_data["last_label"] = label
+            await context.bot.edit_message_text(chat_id=job.chat_id, message_id=message_id, text=label)
+        if job_data["attempts"] >= MAX_POLL_ATTEMPTS:
+            job.schedule_removal()
+            await context.bot.edit_message_text(
+                chat_id=job.chat_id,
+                message_id=message_id,
+                text="⚠️ Still processing - this is taking longer than usual. Check /view_records shortly."
+            )
+        return
+
+    job.schedule_removal()
+
+    if state == "SUCCESS":
+        await _finalize_upload_success(context, job.chat_id, message_id, patient_name, status_response.get("result") or {})
+    else:
+        error_detail = status_response.get("error") or "Unknown error"
+        await context.bot.edit_message_text(
+            chat_id=job.chat_id,
+            message_id=message_id,
+            text=(
+                "❌ <b>Processing failed</b> while reading your lab report.\n\n"
+                f"Details: {html.escape(error_detail[:300])}\n\n"
+                "Please try uploading the photo again with /upload_record."
+            ),
+            parse_mode=ParseMode.HTML
+        )
+
+
+async def _finalize_upload_success(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    message_id: int,
+    patient_name: str,
+    result: dict
+) -> None:
+    """Render the final extraction summary (table + review keyboard) in place."""
+    lab_report = result.get("lab_report") or {}
+    test_results = lab_report.get("results") or []
+    rows = [
+        [t.get("test_name", "?"), str(t.get("results", "")), t.get("unit") or ""]
+        for t in test_results
+    ]
+
+    lines = [
+        "✅ <b>Lab Report Processed</b>",
+        f"👤 Patient: {html.escape(patient_name)}",
+        f"💾 {result.get('records_saved', 0)} value(s) saved",
+    ]
+    paperless_status = result.get("paperless_status")
+    if paperless_status == "failed":
+        lines.append("⚠️ Archiving to Paperless failed (file kept locally; won't retry automatically).")
+    elif paperless_status == "ok":
+        lines.append("🗄️ Archived to Paperless.")
+
+    text = "\n".join(lines)
+    reply_markup = None
+    if rows:
+        text += "\n" + render_table(["Test", "Value", "Unit"], rows)
+        checked = [False] * len(rows)
+        context.chat_data.setdefault(REVIEW_STATE_KEY, {})[message_id] = {
+            "rows": rows,
+            "checked": checked,
+        }
+        reply_markup = _build_review_keyboard(rows, checked)
+    else:
+        text += "\n\n(No test values were extracted from this image.)"
+
+    await context.bot.edit_message_text(
+        chat_id=chat_id,
+        message_id=message_id,
+        text=text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=reply_markup,
+    )
+
+
+def _build_review_keyboard(rows: list, checked: list) -> InlineKeyboardMarkup:
+    """Build the ☑️/⬜ per-row review toggle keyboard (annotate-only, no edit/delete)."""
+    keyboard = []
+    for idx, row in enumerate(rows):
+        label = row[0] if row and row[0] else f"Row {idx + 1}"
+        emoji = "☑️" if checked[idx] else "⬜"
+        keyboard.append([InlineKeyboardButton(f"{emoji} {label}"[:64], callback_data=f"rvw_toggle:{idx}")])
+    keyboard.append([InlineKeyboardButton("⚠️ Something looks wrong", callback_data="rvw_issue")])
+    return InlineKeyboardMarkup(keyboard)
+
+
+async def review_toggle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Flip a single row's reviewed flag and re-render the keyboard in place."""
+    query = update.callback_query
+    message_id = query.message.message_id
+    review = context.chat_data.get(REVIEW_STATE_KEY, {}).get(message_id)
+
+    if not review:
+        await query.answer("This review has expired.", show_alert=True)
+        return
+
+    idx = int(query.data.split(":", 1)[1])
+    review["checked"][idx] = not review["checked"][idx]
+    await query.answer()
+    await query.edit_message_reply_markup(
+        reply_markup=_build_review_keyboard(review["rows"], review["checked"])
+    )
+
+
+async def review_issue_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Explain that editing/deleting extracted values isn't supported yet."""
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text(
+        "Editing or deleting extracted values isn't supported yet.\n"
+        "To log the correct value yourself, use /add_record for now."
+    )
+
+
+def get_upload_review_handlers() -> list:
+    """CallbackQueryHandlers for the post-upload review keyboard (registered globally, not tied to the upload ConversationHandler)."""
+    return [
+        CallbackQueryHandler(review_toggle_callback, pattern=r"^rvw_toggle:\d+$"),
+        CallbackQueryHandler(review_issue_callback, pattern=r"^rvw_issue$"),
+    ]
 
 
 async def cancel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

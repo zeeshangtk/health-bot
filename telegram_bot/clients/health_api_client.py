@@ -228,6 +228,25 @@ class HealthAPIClient:
             logger.error(error_msg)
             raise ConnectionError(error_msg) from e
     
+    async def get_upload_status(self, task_id: str) -> Dict[str, Any]:
+        """
+        Poll the status of a background upload-processing task.
+
+        Args:
+            task_id: Celery task ID returned by upload_record_image()
+
+        Returns:
+            Dict with status, stage, detail, result, error
+
+        Raises:
+            ValueError: If API error occurs
+            ConnectionError: If connection fails
+        """
+        return await self._request(
+            "GET",
+            f"/api/v1/records/upload/status/{task_id}"
+        )
+
     async def get_html_view(self, patient_name: str) -> str:
         """
         Get HTML graph view of patient health records.

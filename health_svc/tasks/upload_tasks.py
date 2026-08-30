@@ -46,6 +46,23 @@ def _record_task_metrics(success: bool) -> None:
         # Don't fail the task if metrics recording fails
         logger.warning(f"Failed to record task metrics: {e}")
 
+
+def _report_progress(task, stage: str, detail: str) -> None:
+    """
+    Report a PROGRESS state for live status polling (GET /upload/status/{task_id}).
+
+    Guarded on task.request.id: it's only unset when a task is invoked
+    directly (e.g. via .run() in unit tests) rather than through Celery's
+    .delay()/.apply_async(), in which case there's no task_id to report
+    progress against anyway.
+    """
+    if not getattr(task.request, "id", None):
+        return
+    try:
+        task.update_state(state="PROGRESS", meta={"stage": stage, "detail": detail})
+    except Exception as e:
+        logger.warning(f"Failed to report progress ({stage}): {e}")
+
 # Constants
 DEFAULT_RETRY_BASE_DELAY = 2  # seconds
 MAX_RETRIES = 3
@@ -261,11 +278,12 @@ def create_processing_result(
     content_type: str,
     upload_timestamp: str,
     lab_report: Dict[str, Any],
-    records_saved: int
+    records_saved: int,
+    paperless_status: str = "skipped"
 ) -> Dict[str, Any]:
     """
     Create standardized processing result dictionary.
-    
+
     Args:
         filename: Unique filename of the uploaded file.
         file_path: Full path to the stored file.
@@ -274,7 +292,9 @@ def create_processing_result(
         upload_timestamp: ISO format timestamp of upload.
         lab_report: Extracted lab report data.
         records_saved: Number of records saved to database.
-    
+        paperless_status: One of "ok", "failed", "skipped" - outcome of the
+            best-effort Paperless NGX archival step.
+
     Returns:
         dict: Processing result with status and metadata.
     """
@@ -287,7 +307,8 @@ def create_processing_result(
         "upload_timestamp": upload_timestamp,
         "processed_at": datetime.now(timezone.utc).isoformat(),
         "lab_report": lab_report,
-        "records_saved": records_saved
+        "records_saved": records_saved,
+        "paperless_status": paperless_status
     }
 
 
@@ -337,14 +358,16 @@ def process_uploaded_file(
         )
         
         file_path_obj = Path(file_path)
-        
+
         # Step 1: Validate file
+        _report_progress(self, stage="validating", detail="Checking uploaded file")
         validate_uploaded_file(file_path_obj, file_size, filename)
-        
+
         # Step 2: Extract lab report data
+        _report_progress(self, stage="extracting", detail="Reading lab report with Gemini AI")
         lab_report = extract_lab_report_data(file_path_obj)
         logger.info(f"Successfully extracted lab report data from file: {filename}")
-        
+
         # Step 2.1: Override patient name if provided (takes precedence over Gemini extraction)
         if patient_name and lab_report.get("patient_info"):
             extracted_name = lab_report["patient_info"].get("patient_name", "Unknown")
@@ -352,8 +375,10 @@ def process_uploaded_file(
             logger.info(
                 f"Overriding extracted patient name '{extracted_name}' with provided name '{patient_name}'"
             )
-        
+
         # Step 2.5: Upload to Paperless NGX
+        _report_progress(self, stage="archiving", detail="Archiving document to Paperless NGX")
+        paperless_status = "ok"
         try:
             paperless_service = PaperlessNgxService()
             paperless_result = paperless_service.upload_medical_document_from_dict(
@@ -365,24 +390,27 @@ def process_uploaded_file(
                 f"Result: {paperless_result}"
             )
         except Exception as paperless_exc:
-            # Log error but don't fail the entire task if Paperless NGX upload fails
+            # Log error but don't fail the entire task if Paperless NGX upload fails.
+            # The failure is still surfaced to the user via paperless_status in the result.
+            paperless_status = "failed"
             logger.warning(
                 f"Failed to upload document to Paperless NGX for {filename}: {paperless_exc}",
                 exc_info=True
             )
-        
+
         # Step 3: Transform and save to database
+        _report_progress(self, stage="saving", detail="Saving extracted values")
         lab_report_obj, sample_timestamp, _ = transform_lab_report_to_records(lab_report)
         records_saved = save_lab_report_to_database(
-            lab_report_obj, 
-            sample_timestamp, 
+            lab_report_obj,
+            sample_timestamp,
             patient_name=patient_name
         )
         logger.info(
             f"Successfully stored {records_saved} health records "
             f"from lab report for file: {filename}"
         )
-        
+
         # Step 4: Return result
         result = create_processing_result(
             filename=filename,
@@ -391,7 +419,8 @@ def process_uploaded_file(
             content_type=content_type,
             upload_timestamp=upload_timestamp,
             lab_report=lab_report,
-            records_saved=records_saved
+            records_saved=records_saved,
+            paperless_status=paperless_status
         )
         
         logger.info(

@@ -68,7 +68,10 @@ def upload_test_app(temp_upload_dir):
     tmpdir, test_upload_service = temp_upload_dir
     
     app = FastAPI(title="Health Service API Test")
-    
+
+    from core.exceptions import setup_exception_handlers
+    setup_exception_handlers(app)
+
     # Create test router with test upload service
     from fastapi import APIRouter, UploadFile, File
     from schemas import ImageUploadResponse
@@ -306,13 +309,16 @@ def test_upload_missing_content_type(client):
     """
     image_data = create_test_image("jpeg", 1024)
     image_data.seek(0)
-    
+
+    mock_task = create_mock_celery_task("test-task-id-missing-content-type")
+
     # Try to send without explicit content type
     # The test client may set application/octet-stream or similar
-    response = client.post(
-        "/api/v1/records/upload",
-        files={"file": ("test.jpg", image_data)}
-    )
+    with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
+        response = client.post(
+            "/api/v1/records/upload",
+            files={"file": ("test.jpg", image_data)}
+        )
     # FastAPI test client may set a default content type, so this might succeed
     # or fail depending on what default is set. Either way, we validate content type.
     # If it's not an image type, it should fail.
@@ -560,36 +566,33 @@ def test_upload_task_queued_with_correct_parameters(client, temp_upload_dir):
     assert isinstance(kwargs["upload_timestamp"], str)  # ISO format timestamp
 
 
-def test_upload_task_queuing_failure_does_not_fail_upload(client, temp_upload_dir):
-    """Test that upload succeeds even if task queuing fails."""
+def test_upload_task_queuing_failure_returns_error(client, temp_upload_dir):
+    """Test that a task-queuing failure is surfaced as an error, not a false success.
+
+    Silently returning "success" with task_id=None would mean the uploaded
+    photo is never processed and the user is never told - see upload_service.py.
+    """
     tmpdir, _ = temp_upload_dir
     image_data = create_test_image("jpeg", 1024)
     image_data.seek(0)
-    
+
     # Mock Celery task with delay that raises an exception
     mock_task = MagicMock()
     mock_task.delay = MagicMock(side_effect=Exception("Redis connection failed"))
-    
+
     with patch('tasks.upload_tasks.process_uploaded_file', mock_task):
         response = client.post(
             "/api/v1/records/upload",
             files={"file": ("test.jpg", image_data, "image/jpeg")}
         )
-    
-    # Upload should still succeed
-    assert response.status_code == 201
-    data = response.json()
-    assert data["status"] == "success"
-    assert data["filename"].endswith(".jpg")
-    
-    # Task ID should be None when queuing fails
-    assert data["task_id"] is None
-    
-    # Verify file was still saved
+
+    assert response.status_code == 502
+    assert "queue" in response.json()["detail"].lower()
+
+    # The file itself was already written to disk before queuing was attempted
     upload_path = Path(tmpdir)
     saved_files = list(upload_path.glob("*.jpg"))
     assert len(saved_files) == 1
-    assert saved_files[0].name == data["filename"]
 
 
 def test_upload_task_id_in_response_when_queued(client, temp_upload_dir):

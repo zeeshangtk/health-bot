@@ -3,9 +3,11 @@ View records handler.
 Displays the latest 5 health records based on patient and record type filters.
 Rate limited to prevent API abuse.
 """
+import html
 import logging
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode
 from telegram.ext import (
     ConversationHandler,
     CommandHandler,
@@ -15,6 +17,7 @@ from telegram.ext import (
 
 from config import SUPPORTED_RECORD_TYPES
 from clients.health_api_client import get_health_api_client
+from utils.formatting import render_table
 from utils.rate_limiter import rate_limit_api_calls
 
 logger = logging.getLogger(__name__)
@@ -178,42 +181,38 @@ async def record_type_selected_for_view(update: Update, context: ContextTypes.DE
             )
             
             # Format records for display
+            patient_display = "All Patients" if patient_name == "ALL" else patient_name
+            type_display = "All Types" if record_type == "ALL" else record_type
+
             if not records:
-                patient_display = "All Patients" if patient_name == "ALL" else patient_name
-                type_display = "All Types" if record_type == "ALL" else record_type
-                
                 await query.edit_message_text(
-                    f"📋 **No Records Found**\n\n"
-                    f"Patient: *{patient_display}*\n"
-                    f"Record Type: *{type_display}*\n\n"
+                    f"📋 <b>No Records Found</b>\n\n"
+                    f"Patient: <b>{html.escape(patient_display)}</b>\n"
+                    f"Record Type: <b>{html.escape(type_display)}</b>\n\n"
                     f"No records match your criteria.",
-                    parse_mode="Markdown"
+                    parse_mode=ParseMode.HTML
                 )
             else:
-                # Build readable text display
-                patient_display = "All Patients" if patient_name == "ALL" else patient_name
-                type_display = "All Types" if record_type == "ALL" else record_type
-                
-                text_lines = [
-                    f"📋 **Latest 5 Records**\n",
-                    f"Patient: *{patient_display}*",
-                    f"Record Type: *{type_display}*\n",
-                    "─" * 30 + "\n"
+                header = (
+                    f"📋 <b>Latest {len(records)} Record(s)</b>\n"
+                    f"Patient: <b>{html.escape(patient_display)}</b>\n"
+                    f"Record Type: <b>{html.escape(type_display)}</b>\n"
+                )
+
+                rows = [
+                    [
+                        datetime.fromisoformat(record["timestamp"]).strftime("%Y-%m-%d %H:%M"),
+                        record["patient"],
+                        record["record_type"],
+                        record["value"],
+                    ]
+                    for record in records
                 ]
-                
-                for i, record in enumerate(records, 1):
-                    # Parse timestamp from ISO string
-                    timestamp_str = datetime.fromisoformat(record["timestamp"]).strftime("%Y-%m-%d %H:%M")
-                    text_lines.append(
-                        f"**{i}.** {timestamp_str}\n"
-                        f"   👤 {record['patient']}\n"
-                        f"   📋 {record['record_type']}\n"
-                        f"   💾 {record['value']}\n"
-                    )
-                
+                table = render_table(["Time", "Patient", "Type", "Value"], rows)
+
                 await query.edit_message_text(
-                    "\n".join(text_lines),
-                    parse_mode="Markdown"
+                    f"{header}\n{table}",
+                    parse_mode=ParseMode.HTML
                 )
             
             logger.info(

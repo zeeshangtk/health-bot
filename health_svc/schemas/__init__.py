@@ -8,7 +8,7 @@ from schemas.health_record import (
     HealthRecordCreate,
     HealthRecordResponse,
 )
-from schemas.upload import ImageUploadResponse
+from schemas.upload import ImageUploadResponse, UploadStatusResponse
 from schemas.medical_info import (
     TestResult,
     HospitalInfo,
@@ -26,6 +26,7 @@ __all__ = [
     "HealthRecordResponse",
     # Upload schemas
     "ImageUploadResponse",
+    "UploadStatusResponse",
     # Medical info schemas
     "TestResult",
     "HospitalInfo",

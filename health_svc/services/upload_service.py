@@ -12,6 +12,7 @@ from fastapi import UploadFile, HTTPException, status
 from typing import Tuple, Optional
 
 from core.config import UPLOAD_DIR, UPLOAD_MAX_SIZE
+from core.exceptions import TaskQueueError
 from services.validators.upload_validator import validate_upload_file, validate_file_size
 
 logger = logging.getLogger(__name__)
@@ -93,7 +94,7 @@ class UploadService:
                 try:
                     # Lazy import to avoid circular dependency
                     from tasks.upload_tasks import process_uploaded_file
-                    
+
                     upload_timestamp = datetime.now(timezone.utc).isoformat()
                     task = process_uploaded_file.delay(
                         filename=unique_filename,
@@ -106,17 +107,22 @@ class UploadService:
                     task_id = task.id
                     logger.info(f"Queued background processing task {task_id} for file: {unique_filename}")
                 except Exception as e:
-                    # Log error but don't fail the upload if task queuing fails
+                    # The file is already saved to disk at this point, but processing
+                    # can't happen without a queued task - surface this as an error
+                    # instead of returning a false "success" with task_id=None.
                     logger.error(
                         f"Failed to queue background processing task for {unique_filename}: {str(e)}",
                         exc_info=True
                     )
-                    # Continue with response even if task queuing failed
-            
+                    raise TaskQueueError() from e
+
             return unique_filename, str(upload_path), task_id
-            
+
         except HTTPException:
             # Re-raise HTTP exceptions
+            raise
+        except TaskQueueError:
+            # Re-raise domain exceptions (handled by the global exception handler)
             raise
         except Exception as e:
             logger.error(f"Unexpected error during file upload: {str(e)}", exc_info=True)

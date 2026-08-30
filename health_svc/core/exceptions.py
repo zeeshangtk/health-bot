@@ -174,8 +174,14 @@ class GeminiServiceError(ExternalServiceError):
 
 class PaperlessServiceError(ExternalServiceError):
     """Raised when Paperless NGX service fails."""
-    
+
     detail = "Paperless NGX service error"
+
+
+class TaskQueueError(ExternalServiceError):
+    """Raised when queuing a background processing task fails."""
+
+    detail = "Failed to queue background processing task"
 
 
 # =============================================================================

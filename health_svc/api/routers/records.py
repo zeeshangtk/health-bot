@@ -31,7 +31,8 @@ from typing import Optional, List
 from schemas import (
     HealthRecordCreate,
     HealthRecordResponse,
-    ImageUploadResponse
+    ImageUploadResponse,
+    UploadStatusResponse
 )
 from services import HealthService, UploadService
 from services.graph import GraphService
@@ -41,6 +42,8 @@ from core.dependencies import (
     get_upload_service,
     get_graph_service
 )
+from celery_app import celery_app
+from celery.result import AsyncResult
 
 logger = logging.getLogger(__name__)
 
@@ -252,4 +255,46 @@ async def upload_image(
         filename=unique_filename,
         message="Image uploaded successfully",
         task_id=task_id
+    )
+
+
+@router.get(
+    "/upload/status/{task_id}",
+    response_model=UploadStatusResponse,
+    summary="Get background upload-processing status",
+    description="Poll the status of a Celery task returned by POST /upload, "
+                "so a client can show live progress instead of waiting silently."
+)
+async def get_upload_status(task_id: str):
+    """
+    Get the current state of a background upload-processing task.
+
+    - **task_id**: Celery task ID returned by POST /upload
+
+    Returns the task's Celery state (PENDING, PROGRESS, SUCCESS, FAILURE),
+    along with a human-readable stage/detail while in progress, the final
+    result once successful, or an error message once failed.
+    """
+    async_result = AsyncResult(task_id, app=celery_app)
+    state = async_result.state
+
+    stage = None
+    detail = None
+    result = None
+    error = None
+
+    if state == "PROGRESS" and isinstance(async_result.info, dict):
+        stage = async_result.info.get("stage")
+        detail = async_result.info.get("detail")
+    elif state == "SUCCESS":
+        result = async_result.result
+    elif state == "FAILURE":
+        error = str(async_result.info)
+
+    return UploadStatusResponse(
+        status=state,
+        stage=stage,
+        detail=detail,
+        result=result,
+        error=error
     )
