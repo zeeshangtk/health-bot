@@ -97,9 +97,13 @@ class DuplicatePatientError(HealthServiceError):
 
 class RecordNotFoundError(HealthServiceError):
     """Raised when a health record is not found."""
-    
+
     status_code = status.HTTP_404_NOT_FOUND
     detail = "Health record not found"
+
+    def __init__(self, record_id: Optional[int] = None, **kwargs: Any):
+        detail = f"Health record {record_id} not found" if record_id is not None else self.detail
+        super().__init__(detail=detail, record_id=record_id, **kwargs)
 
 
 class InvalidRecordDataError(HealthServiceError):

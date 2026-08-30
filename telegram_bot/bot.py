@@ -19,7 +19,11 @@ from handlers.get_patients import get_get_patients_handler  # NEW: Get patients 
 from handlers.view import get_view_records_conversation_handler
 from handlers.view_records_graph import get_view_records_graph_conversation_handler
 from handlers.export import get_export_conversation_handler
-from handlers.upload_record import get_upload_record_conversation_handler, get_upload_review_handlers
+from handlers.upload_record import (
+    get_upload_record_conversation_handler,
+    get_upload_review_callback_handlers,
+    get_upload_review_message_handler,
+)
 from handlers.unknown_command import get_unknown_command_handler, get_help_callback_handler
 from utils.rate_limiter import rate_limit_commands
 
@@ -132,8 +136,12 @@ def main() -> None:
     application.add_handler(get_view_records_graph_conversation_handler())
     application.add_handler(get_export_conversation_handler())
     application.add_handler(get_upload_record_conversation_handler())
-    for handler in get_upload_review_handlers():
+    for handler in get_upload_review_callback_handlers():
         application.add_handler(handler)
+    # Group 1: only fires after group 0's ConversationHandlers have had first
+    # refusal on this update, so it never steals a text reply meant for an
+    # active conversation step.
+    application.add_handler(get_upload_review_message_handler(), group=1)
 
     # Register command handlers
     application.add_handler(CommandHandler("start", start_handler))

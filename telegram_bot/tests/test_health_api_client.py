@@ -266,3 +266,82 @@ def test_health_api_client_has_auth_header():
     client = HealthAPIClient(base_url="http://test-server", api_key=TEST_API_KEY)
     assert API_KEY_HEADER_NAME in client._default_headers
     assert client._default_headers[API_KEY_HEADER_NAME] == TEST_API_KEY
+
+
+@pytest.mark.asyncio
+async def test_update_record_value_only(mock_client):
+    """Test update_record sends only the value field when unit isn't given."""
+    with patch.object(mock_client, '_request', new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = {**TEST_RECORD, "id": 1, "value": "121/81"}
+
+        result = await mock_client.update_record(1, value="121/81")
+
+        assert result["value"] == "121/81"
+        mock_request.assert_called_once_with(
+            "PATCH", "/api/v1/records/1", json={"value": "121/81"}
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_record_unit_only(mock_client):
+    """Test update_record sends only the unit field when value isn't given."""
+    with patch.object(mock_client, '_request', new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = {**TEST_RECORD, "id": 1, "unit": "kPa"}
+
+        await mock_client.update_record(1, unit="kPa")
+
+        mock_request.assert_called_once_with(
+            "PATCH", "/api/v1/records/1", json={"unit": "kPa"}
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_record_not_found(mock_client):
+    """Test update_record propagates a 404 as ValueError."""
+    with patch.object(mock_client, '_request', new_callable=AsyncMock) as mock_request:
+        mock_request.side_effect = ValueError("API error 404: Health record 1 not found")
+
+        with pytest.raises(ValueError, match="404"):
+            await mock_client.update_record(1, value="1")
+
+
+@pytest.mark.asyncio
+async def test_delete_record_success(mock_client):
+    """Test delete_record calls DELETE on the record endpoint."""
+    with patch.object(mock_client, '_request', new_callable=AsyncMock) as mock_request:
+        mock_request.return_value = {}
+
+        await mock_client.delete_record(1)
+
+        mock_request.assert_called_once_with("DELETE", "/api/v1/records/1")
+
+
+@pytest.mark.asyncio
+async def test_delete_record_not_found(mock_client):
+    """Test delete_record propagates a 404 as ValueError."""
+    with patch.object(mock_client, '_request', new_callable=AsyncMock) as mock_request:
+        mock_request.side_effect = ValueError("API error 404: Health record 1 not found")
+
+        with pytest.raises(ValueError, match="404"):
+            await mock_client.delete_record(1)
+
+
+@pytest.mark.asyncio
+async def test_request_returns_empty_dict_for_204_no_content(mock_client):
+    """Test _request doesn't try to parse a body on a 204 response (e.g. DELETE)."""
+    mock_response = Mock()
+    mock_response.status_code = 204
+    mock_response.content = b""
+    mock_response.raise_for_status = Mock()
+    mock_response.json = Mock(side_effect=AssertionError("json() should not be called for 204"))
+
+    mock_http_client = AsyncMock()
+    mock_http_client.request = AsyncMock(return_value=mock_response)
+
+    mock_async_client_cm = AsyncMock()
+    mock_async_client_cm.__aenter__.return_value = mock_http_client
+
+    with patch("httpx.AsyncClient", return_value=mock_async_client_cm):
+        result = await mock_client._request("DELETE", "/api/v1/records/1")
+
+    assert result == {}

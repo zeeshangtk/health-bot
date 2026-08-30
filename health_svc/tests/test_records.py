@@ -22,6 +22,7 @@ def test_create_record_success(client):
     response = client.post("/api/v1/records", json=record_data)
     assert response.status_code == 201
     data = response.json()
+    assert isinstance(data["id"], int)
     assert data["patient"] == "Test Patient"
     assert data["record_type"] == "BP"
     assert data["value"] == "120/80"
@@ -248,6 +249,106 @@ def test_get_records_limit_validation(client):
     # Test limit too low
     response = client.get("/api/v1/records?limit=0")
     assert response.status_code == 422
+
+
+def _create_record(client, patient="Test Patient", value="120/80", unit="mmHg"):
+    """Helper: create a patient (if needed) and a record, return the record dict."""
+    client.post("/api/v1/patients", json={"name": patient})
+    response = client.post(
+        "/api/v1/records",
+        json={
+            "timestamp": "2025-01-01T10:00:00",
+            "patient": patient,
+            "record_type": "BP",
+            "value": value,
+            "unit": unit
+        }
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def test_update_record_value_only(client):
+    """Test PATCH updates value and leaves unit/record_type/patient unchanged."""
+    record = _create_record(client)
+
+    response = client.patch(f"/api/v1/records/{record['id']}", json={"value": "121/81"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == record["id"]
+    assert data["value"] == "121/81"
+    assert data["unit"] == "mmHg"
+    assert data["record_type"] == "BP"
+    assert data["patient"] == "Test Patient"
+
+
+def test_update_record_unit_only(client):
+    """Test PATCH can update unit alone, leaving value unchanged."""
+    record = _create_record(client)
+
+    response = client.patch(f"/api/v1/records/{record['id']}", json={"unit": "kPa"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["value"] == "120/80"
+    assert data["unit"] == "kPa"
+
+
+def test_update_record_value_and_unit(client):
+    """Test PATCH can update both value and unit together."""
+    record = _create_record(client)
+
+    response = client.patch(
+        f"/api/v1/records/{record['id']}",
+        json={"value": "130/85", "unit": "kPa"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["value"] == "130/85"
+    assert data["unit"] == "kPa"
+
+
+def test_update_record_not_found(client):
+    """Test PATCH on a nonexistent record returns 404."""
+    response = client.patch("/api/v1/records/999999", json={"value": "1"})
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_update_record_empty_body(client):
+    """Test PATCH with no fields set returns 400 rather than a silent no-op."""
+    record = _create_record(client)
+
+    response = client.patch(f"/api/v1/records/{record['id']}", json={})
+    assert response.status_code == 400
+
+
+def test_delete_record_success(client):
+    """Test DELETE removes the record; it no longer appears in GET /records."""
+    record = _create_record(client)
+
+    response = client.delete(f"/api/v1/records/{record['id']}")
+    assert response.status_code == 204
+
+    remaining = client.get("/api/v1/records").json()
+    assert all(r["id"] != record["id"] for r in remaining)
+
+
+def test_delete_record_not_found(client):
+    """Test DELETE on a nonexistent record returns 404."""
+    response = client.delete("/api/v1/records/999999")
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_delete_record_idempotency(client):
+    """Test deleting the same record twice returns 404 the second time."""
+    record = _create_record(client)
+
+    first = client.delete(f"/api/v1/records/{record['id']}")
+    assert first.status_code == 204
+
+    second = client.delete(f"/api/v1/records/{record['id']}")
+    assert second.status_code == 404
 
 
 def test_full_workflow(client):
