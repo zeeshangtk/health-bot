@@ -153,3 +153,145 @@ class TestUploadMedicalDocumentTagging:
                     hospital_name="Test Hospital",
                     json_extraction={},
                 )
+
+
+class TestUploadMedicalDocumentCreatedDate:
+    def test_created_date_set_for_parseable_date(self, service, temp_file):
+        with patch.object(service, "_get_or_create_tag_id", return_value=1):
+            with patch("services.paperless_ngx_service.httpx.Client") as mock_client_cls:
+                client_instance = MagicMock()
+                client_instance.post.return_value = _response({"status": "success"})
+                mock_client_cls.return_value.__enter__.return_value = client_instance
+
+                service.upload_medical_document(
+                    document_path=temp_file,
+                    patient_name="Nazra",
+                    date="08-11-2025 03:17 PM",
+                    hospital_name="Test Hospital",
+                    json_extraction={},
+                )
+
+        _, kwargs = client_instance.post.call_args
+        sent_data = dict((k, v) for k, v in kwargs["data"] if k != "tags")
+        assert sent_data["created"] == "2025-11-08"
+
+    def test_created_date_omitted_when_unparseable(self, service, temp_file):
+        with patch.object(service, "_get_or_create_tag_id", return_value=1):
+            with patch("services.paperless_ngx_service.httpx.Client") as mock_client_cls:
+                client_instance = MagicMock()
+                client_instance.post.return_value = _response({"status": "success"})
+                mock_client_cls.return_value.__enter__.return_value = client_instance
+
+                service.upload_medical_document(
+                    document_path=temp_file,
+                    patient_name="Nazra",
+                    date="Unknown Date",
+                    hospital_name="Test Hospital",
+                    json_extraction={},
+                )
+
+        _, kwargs = client_instance.post.call_args
+        sent_keys = [k for k, _ in kwargs["data"]]
+        assert "created" not in sent_keys
+
+
+class TestUploadMedicalDocumentReportTypeTag:
+    def test_report_type_tag_merged_with_patient_tag(self, service, temp_file):
+        def fake_get_or_create(tag_name):
+            return {"Nazra": 42, "Laboratory Reports": 77}[tag_name]
+
+        with patch.object(service, "_get_or_create_tag_id", side_effect=fake_get_or_create):
+            with patch("services.paperless_ngx_service.httpx.Client") as mock_client_cls:
+                client_instance = MagicMock()
+                client_instance.post.return_value = _response({"status": "success"})
+                mock_client_cls.return_value.__enter__.return_value = client_instance
+
+                service.upload_medical_document(
+                    document_path=temp_file,
+                    patient_name="Nazra",
+                    date="2026-08-31",
+                    hospital_name="Test Hospital",
+                    json_extraction={},
+                    report_type="Laboratory Reports",
+                )
+
+        _, kwargs = client_instance.post.call_args
+        sent_tags = [value for key, value in kwargs["data"] if key == "tags"]
+        assert sorted(sent_tags) == ["42", "77"]
+
+    def test_no_report_type_tag_when_absent(self, service, temp_file):
+        with patch.object(service, "_get_or_create_tag_id", return_value=42) as mock_tag:
+            with patch("services.paperless_ngx_service.httpx.Client") as mock_client_cls:
+                client_instance = MagicMock()
+                client_instance.post.return_value = _response({"status": "success"})
+                mock_client_cls.return_value.__enter__.return_value = client_instance
+
+                service.upload_medical_document(
+                    document_path=temp_file,
+                    patient_name="Nazra",
+                    date="2026-08-31",
+                    hospital_name="Test Hospital",
+                    json_extraction={},
+                )
+
+        mock_tag.assert_called_once_with("Nazra")
+
+    def test_upload_fails_when_report_type_tag_resolution_fails(self, service, temp_file):
+        def fake_get_or_create(tag_name):
+            if tag_name == "Laboratory Reports":
+                raise httpx.HTTPStatusError("error", request=MagicMock(), response=MagicMock())
+            return 42
+
+        with patch.object(service, "_get_or_create_tag_id", side_effect=fake_get_or_create):
+            with pytest.raises(httpx.HTTPStatusError):
+                service.upload_medical_document(
+                    document_path=temp_file,
+                    patient_name="Nazra",
+                    date="2026-08-31",
+                    hospital_name="Test Hospital",
+                    json_extraction={},
+                    report_type="Laboratory Reports",
+                )
+
+
+class TestUploadMedicalDocumentFromDictReportType:
+    def test_report_type_and_date_extracted_and_passed_through(self, service, temp_file):
+        medical_info = {
+            "hospital_info": {
+                "hospital_name": "Test Hospital",
+                "report_type": "Laboratory Reports",
+            },
+            "patient_info": {
+                "patient_name": "Nazra",
+                "sample_date": "08-11-2025 03:17 PM",
+            },
+        }
+
+        with patch.object(
+            service, "upload_medical_document", return_value={"status": "success"}
+        ) as mock_upload:
+            service.upload_medical_document_from_dict(
+                document_path=temp_file,
+                medical_info=medical_info,
+            )
+
+        _, kwargs = mock_upload.call_args
+        assert kwargs["report_type"] == "Laboratory Reports"
+        assert kwargs["date"] == "08-11-2025 03:17 PM"
+
+    def test_missing_report_type_passed_as_none(self, service, temp_file):
+        medical_info = {
+            "hospital_info": {"hospital_name": "Test Hospital"},
+            "patient_info": {"patient_name": "Nazra", "sample_date": "08-11-2025 03:17 PM"},
+        }
+
+        with patch.object(
+            service, "upload_medical_document", return_value={"status": "success"}
+        ) as mock_upload:
+            service.upload_medical_document_from_dict(
+                document_path=temp_file,
+                medical_info=medical_info,
+            )
+
+        _, kwargs = mock_upload.call_args
+        assert kwargs["report_type"] is None

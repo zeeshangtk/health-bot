@@ -14,6 +14,7 @@ from core.config import (
     PAPERLESS_NGX_TIMEOUT,
     PAPERLESS_NGX_VERIFY_SSL
 )
+from core.date_utils import parse_sample_date
 
 logger = logging.getLogger(__name__)
 
@@ -74,18 +75,19 @@ class PaperlessNgxService:
         title: Optional[str] = None,
         correspondent_id: Optional[int] = None,
         document_type_id: Optional[int] = None,
-        tag_ids: Optional[list[int]] = None
+        tag_ids: Optional[list[int]] = None,
+        report_type: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Upload a medical document to Paperless NGX with metadata for searchability.
-        
+
         This method:
         1. Validates the document file exists
         2. Creates a searchable title from patient name, hospital, and date
         3. Prepares metadata including JSON extraction for searchability
         4. Uploads the document to Paperless NGX via REST API
         5. Returns the upload result
-        
+
         Args:
             document_path: Path to the document file to upload.
             patient_name: Name of the patient.
@@ -96,10 +98,12 @@ class PaperlessNgxService:
             correspondent_id: Optional correspondent ID in Paperless NGX.
             document_type_id: Optional document type ID in Paperless NGX.
             tag_ids: Optional list of tag IDs to associate with the document.
-            
+            report_type: Optional report type (e.g. "Laboratory Reports"), tagged
+                the same way as patient_name if provided.
+
         Returns:
             dict: Response from Paperless NGX API with upload status.
-            
+
         Raises:
             FileNotFoundError: If the document file doesn't exist.
             httpx.HTTPError: For HTTP request errors.
@@ -138,7 +142,28 @@ class PaperlessNgxService:
         # can be found by patient in the Paperless UI. Any failure here fails the
         # whole upload rather than silently archiving an untagged document.
         patient_tag_id = self._get_or_create_tag_id(patient_name)
-        all_tag_ids = list(dict.fromkeys((tag_ids or []) + [patient_tag_id]))
+        resolved_tag_ids = (tag_ids or []) + [patient_tag_id]
+
+        # Also tag by report type when available (same failure semantics as the
+        # patient tag - if it's present but the tag API call fails, the whole
+        # upload fails; if it's simply absent from the data, there's nothing to tag).
+        if report_type:
+            resolved_tag_ids.append(self._get_or_create_tag_id(report_type))
+
+        all_tag_ids = list(dict.fromkeys(resolved_tag_ids))
+
+        # Use the actual report/sample date as the document's Paperless "created"
+        # date (instead of the upload time) so Paperless's date-range filter works.
+        # An unparseable value (e.g. the "Unknown Date" fallback) is expected when
+        # extraction didn't find a date - leave "created" unset in that case rather
+        # than failing the upload.
+        created = None
+        try:
+            created = parse_sample_date(date).strftime("%Y-%m-%d")
+        except ValueError:
+            logger.warning(
+                f"Could not parse date '{date}' for Paperless 'created' field; leaving unset."
+            )
 
         # Prepare multipart form data
         # Read file content
@@ -156,6 +181,9 @@ class PaperlessNgxService:
         data = {
             "title": searchable_title
         }
+
+        if created is not None:
+            data["created"] = created
 
         # Add optional fields if provided
         if correspondent_id is not None:
@@ -304,8 +332,8 @@ class PaperlessNgxService:
         """
         Upload a medical document using a medical info dictionary.
         
-        This is a convenience method that extracts patient name, date, and hospital
-        from a medical info dictionary (e.g., from MedicalInfo schema).
+        This is a convenience method that extracts patient name, date, hospital,
+        and report type from a medical info dictionary (e.g., from MedicalInfo schema).
         
         Args:
             document_path: Path to the document file to upload.
@@ -330,10 +358,12 @@ class PaperlessNgxService:
             raise ValueError("patient_info.patient_name is required in medical_info")
         
         hospital_name = hospital_info.get("hospital_name", "Unknown Hospital")
-        
+
         # Extract date from patient_info (could be sample_date or other date field)
         date = patient_info.get("sample_date") or patient_info.get("date") or "Unknown Date"
-        
+
+        report_type = hospital_info.get("report_type")
+
         # Use the full medical_info as json_extraction
         return self.upload_medical_document(
             document_path=document_path,
@@ -344,5 +374,6 @@ class PaperlessNgxService:
             title=title,
             correspondent_id=correspondent_id,
             document_type_id=document_type_id,
-            tag_ids=tag_ids
+            tag_ids=tag_ids,
+            report_type=report_type
         )
