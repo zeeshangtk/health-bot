@@ -71,6 +71,25 @@ MAX_RETRIES = 3
 NON_RETRYABLE_ERRORS = (FileNotFoundError, ValueError, ValidationError, PatientNotFoundError)
 
 
+def _format_validation_error(exc: ValidationError) -> str:
+    """
+    Render a pydantic ValidationError as a short human-readable string.
+
+    pydantic_core.ValidationError can't be reconstructed by Celery's JSON
+    result backend (it round-trips exceptions via `cls(*exc.args)`, but
+    `.args` is always empty on this exception and its constructor doesn't
+    accept positional args) - it comes back as an opaque
+    "<class '...ValidationError'>([])" string. Formatting the real detail
+    into a plain string here, then raising a builtin Exception with it,
+    keeps the useful message intact through that round-trip.
+    """
+    parts = []
+    for err in exc.errors():
+        loc = ".".join(str(p) for p in err["loc"])
+        parts.append(f"{loc}: {err['msg']}")
+    return "; ".join(parts)
+
+
 def parse_sample_date(date_str: str) -> datetime:
     """
     Parse sample date string from lab report format to datetime.
@@ -161,21 +180,28 @@ def extract_lab_report_data(
 def convert_test_results_to_dicts(test_results: List[TestResult]) -> List[Dict[str, str]]:
     """
     Convert TestResult objects to database-ready dictionaries.
-    
+
+    Rows with no result value are skipped: the health_records table's
+    `value` column is NOT NULL, and a row with nothing extracted isn't
+    meaningful to persist.
+
     Args:
         test_results: List of TestResult Pydantic models.
-    
+
     Returns:
         List of dictionaries with keys: test_name, results, unit.
     """
-    return [
-        {
+    dicts = []
+    for result in test_results:
+        if result.results is None:
+            logger.warning(f"Skipping test result with no value: {result.test_name}")
+            continue
+        dicts.append({
             "test_name": result.test_name,
             "results": result.results,
             "unit": result.unit
-        }
-        for result in test_results
-    ]
+        })
+    return dicts
 
 
 def transform_lab_report_to_records(
@@ -424,6 +450,23 @@ def process_uploaded_file(
         
         return result
         
+    except ValidationError as exc:
+        message = f"Lab report data failed validation ({_format_validation_error(exc)})"
+        logger.error(
+            f"Non-retryable error processing {filename}: {message}",
+            extra={
+                "task_id": self.request.id,
+                "uploaded_file": filename,  # Note: can't use "filename" - reserved by LogRecord
+                "error_type": type(exc).__name__
+            }
+        )
+        # Record failure metric for Grafana dashboard
+        _record_task_metrics(success=False)
+        # Re-raise as a plain Exception: pydantic_core.ValidationError can't be
+        # reconstructed by Celery's result backend, so raising it directly leaves
+        # the caller with an opaque "<class '...'>([])" string instead of this message.
+        raise Exception(message) from exc
+
     except NON_RETRYABLE_ERRORS as exc:
         logger.error(
             f"Non-retryable error processing {filename}: {exc}",

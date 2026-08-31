@@ -23,18 +23,19 @@ class TestResult(BaseModel):
         description="Name of the test",
         examples=["Blood Urea", "Random Blood Sugar"]
     )
-    results: str = Field(
-        ...,
-        description="Test result value (may include special characters like ↑ or ↓)",
+    results: Optional[str] = Field(
+        None,
+        description="Test result value (may include special characters like ↑ or ↓). "
+                     "None if illegible/missing in the source image.",
         examples=["64.0", "↑250.0"]
     )
-    unit: str = Field(
-        ...,
+    unit: Optional[str] = Field(
+        None,
         description="Unit of measurement",
         examples=["mg/dl", "mMol/L"]
     )
-    reference_range: str = Field(
-        ...,
+    reference_range: Optional[str] = Field(
+        None,
         description="Normal reference range for the test",
         examples=["10.0-40.0", "136.0-145.0"]
     )
