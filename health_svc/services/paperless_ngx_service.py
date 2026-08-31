@@ -134,11 +134,17 @@ class PaperlessNgxService:
             if hospital_info.get("report_type"):
                 searchable_title += f"\nReport Type: {hospital_info.get('report_type')}"
         
+        # Resolve (or create) a tag matching the patient's name, so the document
+        # can be found by patient in the Paperless UI. Any failure here fails the
+        # whole upload rather than silently archiving an untagged document.
+        patient_tag_id = self._get_or_create_tag_id(patient_name)
+        all_tag_ids = list(dict.fromkeys((tag_ids or []) + [patient_tag_id]))
+
         # Prepare multipart form data
         # Read file content
         with open(document_path_obj, "rb") as file:
             file_content = file.read()
-        
+
         files = {
             "document": (
                 document_path_obj.name,
@@ -146,15 +152,15 @@ class PaperlessNgxService:
                 self._get_content_type(document_path_obj)
             )
         }
-        
+
         data = {
             "title": searchable_title
         }
-        
+
         # Add optional fields if provided
         if correspondent_id is not None:
             data["correspondent"] = str(correspondent_id)
-        
+
         if document_type_id is not None:
             data["document_type"] = str(document_type_id)
         
@@ -168,25 +174,16 @@ class PaperlessNgxService:
             with httpx.Client(timeout=self.timeout, verify=self.verify_ssl) as client:
                 # For tags, we need to send them as multiple form fields with the same name
                 # httpx supports this by using a list of tuples
-                if tag_ids:
-                    # Create form data with tags as multiple entries
-                    form_data = list(data.items())
-                    for tag_id in tag_ids:
-                        form_data.append(("tags", str(tag_id)))
-                    
-                    response = client.post(
-                        self.upload_endpoint,
-                        headers=self.headers,
-                        files=files,
-                        data=form_data
-                    )
-                else:
-                    response = client.post(
-                        self.upload_endpoint,
-                        headers=self.headers,
-                        files=files,
-                        data=data
-                    )
+                form_data = list(data.items())
+                for tag_id in all_tag_ids:
+                    form_data.append(("tags", str(tag_id)))
+
+                response = client.post(
+                    self.upload_endpoint,
+                    headers=self.headers,
+                    files=files,
+                    data=form_data
+                )
                 
                 # Check response status
                 response.raise_for_status()
@@ -244,7 +241,57 @@ class PaperlessNgxService:
             ".txt": "text/plain",
         }
         return content_types.get(extension, "application/octet-stream")
-    
+
+    def _get_or_create_tag_id(self, tag_name: str) -> int:
+        """
+        Look up a Paperless NGX tag by name (case-insensitive), creating it if
+        it doesn't exist yet.
+
+        Args:
+            tag_name: Name of the tag to find or create.
+
+        Returns:
+            int: The ID of the existing or newly created tag.
+
+        Raises:
+            httpx.HTTPError: For HTTP request errors.
+        """
+        tags_endpoint = f"{self.base_url}/api/tags/"
+
+        with httpx.Client(timeout=self.timeout, verify=self.verify_ssl) as client:
+            response = client.get(
+                tags_endpoint,
+                headers=self.headers,
+                params={"name__iexact": tag_name}
+            )
+            response.raise_for_status()
+            results = response.json().get("results", [])
+            if results:
+                return results[0]["id"]
+
+            try:
+                response = client.post(
+                    tags_endpoint,
+                    headers=self.headers,
+                    json={"name": tag_name}
+                )
+                response.raise_for_status()
+                return response.json()["id"]
+            except httpx.HTTPStatusError as e:
+                # Another worker may have created the same tag concurrently -
+                # re-fetch by name instead of failing outright.
+                if e.response.status_code == 400:
+                    response = client.get(
+                        tags_endpoint,
+                        headers=self.headers,
+                        params={"name__iexact": tag_name}
+                    )
+                    response.raise_for_status()
+                    results = response.json().get("results", [])
+                    if results:
+                        return results[0]["id"]
+                raise
+
     def upload_medical_document_from_dict(
         self,
         document_path: str,
