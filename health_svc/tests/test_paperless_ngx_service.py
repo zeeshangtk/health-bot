@@ -136,8 +136,7 @@ class TestUploadMedicalDocumentTagging:
                 )
 
         _, kwargs = client_instance.post.call_args
-        sent_tags = [value for key, value in kwargs["data"] if key == "tags"]
-        assert sorted(sent_tags) == ["42", "5"]
+        assert sorted(kwargs["data"]["tags"]) == ["42", "5"]
 
     def test_upload_fails_when_tag_resolution_fails(self, service, temp_file):
         with patch.object(
@@ -172,8 +171,7 @@ class TestUploadMedicalDocumentCreatedDate:
                 )
 
         _, kwargs = client_instance.post.call_args
-        sent_data = dict((k, v) for k, v in kwargs["data"] if k != "tags")
-        assert sent_data["created"] == "2025-11-08"
+        assert kwargs["data"]["created"] == "2025-11-08"
 
     def test_created_date_omitted_when_unparseable(self, service, temp_file):
         with patch.object(service, "_get_or_create_tag_id", return_value=1):
@@ -191,8 +189,7 @@ class TestUploadMedicalDocumentCreatedDate:
                 )
 
         _, kwargs = client_instance.post.call_args
-        sent_keys = [k for k, _ in kwargs["data"]]
-        assert "created" not in sent_keys
+        assert "created" not in kwargs["data"]
 
 
 class TestUploadMedicalDocumentReportTypeTag:
@@ -216,8 +213,7 @@ class TestUploadMedicalDocumentReportTypeTag:
                 )
 
         _, kwargs = client_instance.post.call_args
-        sent_tags = [value for key, value in kwargs["data"] if key == "tags"]
-        assert sorted(sent_tags) == ["42", "77"]
+        assert sorted(kwargs["data"]["tags"]) == ["42", "77"]
 
     def test_no_report_type_tag_when_absent(self, service, temp_file):
         with patch.object(service, "_get_or_create_tag_id", return_value=42) as mock_tag:
@@ -295,3 +291,39 @@ class TestUploadMedicalDocumentFromDictReportType:
 
         _, kwargs = mock_upload.call_args
         assert kwargs["report_type"] is None
+
+
+class TestUploadMedicalDocumentRealMultipartEncoding:
+    """
+    Regression coverage for a real bug: building `data` as a flat list of
+    (key, value) tuples for repeated "tags" fields raised
+    "sequence item 1: expected a bytes-like object, tuple found" once combined
+    with `files=` in a real httpx multipart request - a mocked httpx.Client
+    never exercises the actual encoder, so it slipped through unnoticed until
+    it broke production uploads. Routing through httpx.MockTransport runs the
+    real request-encoding path while still avoiding the network.
+    """
+
+    def test_multipart_request_with_multiple_tags_encodes_successfully(self, service, temp_file):
+        captured = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["request"] = request
+            return httpx.Response(200, json={"status": "success"})
+
+        real_client = httpx.Client(transport=httpx.MockTransport(handler))
+
+        with patch.object(service, "_get_or_create_tag_id", side_effect=[42, 77]):
+            with patch("services.paperless_ngx_service.httpx.Client", return_value=real_client):
+                service.upload_medical_document(
+                    document_path=temp_file,
+                    patient_name="Nazra",
+                    date="2026-08-31",
+                    hospital_name="Test Hospital",
+                    json_extraction={},
+                    report_type="Laboratory Reports",
+                )
+
+        body = captured["request"].content
+        assert body.count(b'name="tags"') == 2
+        assert b"42" in body and b"77" in body

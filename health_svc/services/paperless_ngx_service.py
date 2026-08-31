@@ -191,28 +191,30 @@ class PaperlessNgxService:
 
         if document_type_id is not None:
             data["document_type"] = str(document_type_id)
-        
+
+        if all_tag_ids:
+            # For repeated form fields (multiple tags) in a multipart request,
+            # httpx needs a dict with a list value - a flat list of (key, value)
+            # tuples is only reliably supported for URL-encoded (non-file) requests
+            # and raises "expected a bytes-like object, tuple found" when combined
+            # with files= here.
+            data["tags"] = [str(tag_id) for tag_id in all_tag_ids]
+
         try:
             logger.info(
                 f"Uploading medical document to Paperless NGX: {document_path_obj.name} "
                 f"(Patient: {patient_name}, Hospital: {hospital_name})"
             )
-            
+
             # Make the upload request
             with httpx.Client(timeout=self.timeout, verify=self.verify_ssl) as client:
-                # For tags, we need to send them as multiple form fields with the same name
-                # httpx supports this by using a list of tuples
-                form_data = list(data.items())
-                for tag_id in all_tag_ids:
-                    form_data.append(("tags", str(tag_id)))
-
                 response = client.post(
                     self.upload_endpoint,
                     headers=self.headers,
                     files=files,
-                    data=form_data
+                    data=data
                 )
-                
+
                 # Check response status
                 response.raise_for_status()
                 
